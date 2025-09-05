@@ -57,7 +57,6 @@ function onSearch(){
 
         <!-- แถวโปสเตอร์ใหญ่แบบเลื่อน -->
         <section class="container section">
-    <h3 style="margin-bottom:10px">อีเวนต์มาแรง</h3>
     <EventZigzagStrip :items="posters" :height="300" :gap="28" />
   </section>
       </div>
