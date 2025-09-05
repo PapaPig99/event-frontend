@@ -1,49 +1,14 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>User Events</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body{font-family:ui-sans-serif,system-ui,Segoe UI,Arial;margin:24px}
-    table{border-collapse:collapse;width:100%}
-    th,td{border:1px solid #ddd;padding:8px}
-    th{background:#f3f4f6;text-align:left}
-    code{background:#f3f4f6;padding:2px 6px;border-radius:4px}
-  </style>
-</head>
-<body>
-  <h1>User Events</h1>
-  <p>API health: <code id="health">checking…</code></p>
-  <table>
-    <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Event</th><th>Created</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="5">loading…</td></tr></tbody>
-  </table>
-  <script>
-    const API = 'http://localhost:3137/api';
-    async function main(){
-      try{
-        const h = await fetch(`${API}/health`).then(r=>r.json());
-        document.getElementById('health').textContent = h.status || 'ok';
-      }catch{ document.getElementById('health').textContent = 'fail'; }
-
-      try{
-        const data = await fetch(`${API}/user-events`).then(r=>r.json());
-        const tbody = document.getElementById('rows');
-        tbody.innerHTML = data.map(x=>`
-          <tr>
-            <td>${x.id ?? ''}</td>
-            <td>${x.username ?? ''}</td>
-            <td>${x.email ?? ''}</td>
-            <td>${x.eventName ?? ''}</td>
-            <td>${x.createdAt ?? ''}</td>
-          </tr>`).join('') || `<tr><td colspan="5">no data</td></tr>`;
-      }catch(e){
-        document.getElementById('rows').innerHTML =
-          `<tr><td colspan="5">fetch error</td></tr>`;
-      }
-    }
-    main();
-  </script>
-</body>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Event Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
