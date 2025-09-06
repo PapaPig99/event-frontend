@@ -28,7 +28,7 @@
 }
 
 .logo img {
-  height: 40px;
+  height: 38px;
 }
 
 .menu {
@@ -41,7 +41,8 @@
 
 .menu a {
   text-decoration: none;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 500;
   color: #333;
   transition: color .2s;
 }
@@ -53,17 +54,10 @@
 .menu a.active {
   color: #ff6a13;
   position: relative;
+  font-weight: 800;
 }
 
-.menu a.active::after {
-  content: "";
-  position: absolute;
-  bottom: -4px;
-  left: 0; right: 0;
-  height: 2px;
-  background: #ff6a13;
-  border-radius: 2px;
-}
+
 
 .actions {
   display: flex;
