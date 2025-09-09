@@ -83,3 +83,12 @@ function onSearch(){
 
   </div>
 </template>
+
+//รันหน้า login ของ admin
+/*<script setup>
+import Login from './Admin/Login.vue'
+</script>
+
+<template>
+  <Login />
+</template>*/
