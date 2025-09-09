@@ -57,8 +57,6 @@
   font-weight: 800;
 }
 
-
-
 .actions {
   display: flex;
   align-items: center;
