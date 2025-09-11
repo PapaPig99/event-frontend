@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
-import EventZigzagStrip from './components/EventZigzagStrip.vue'
-import RecommendedSection from './components/RecomSec.vue'
+import EventZigzagStrip from '../components/EventZigzagStrip.vue'
+import RecommendedSection from '../components/RecomSec.vue'
 import Event from './Event.vue'
 
 const query = ref('')

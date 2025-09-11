@@ -1,5 +1,5 @@
 <script setup>
-import EventCard from './components/EventCard.vue'
+import EventCard from '../components/EventCard.vue'
 
 /* ----------------------------------------------------------
    TODO: รูปโปสเตอร์
