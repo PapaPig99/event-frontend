@@ -1,72 +1,52 @@
 <script setup>
-import EventCard from '../components/EventCard.vue'
+import { ref, computed, onMounted } from 'vue'
+import Card from '../components/Card.vue'
+import { useRouter } from 'vue-router'
 
-/* ----------------------------------------------------------
-   TODO: รูปโปสเตอร์
-   - นำไฟล์รูปไปไว้ที่ src/assets/ (เช่น poster1.jpg, poster2.jpg ...)
-   - แล้ว import ด้วย new URL(..., import.meta.url).href ให้ path ถูกตอน build
-   - ถ้ายังไม่มีรูป ให้คงไว้ชั่วคราว หรือซ้ำรูปเดิมได้
----------------------------------------------------------- */
-const events = [
-  {
-    image: 'https://img.pptvhd36.com/thumbor/2025/02/13/news-66872b2.webp', // TODO: เปลี่ยนชื่อไฟล์จริง
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://atkmedia.allticket.com/images/up/99955/NCTD_20052025_Info_Poster_v1.jpg',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://p-u.popcdn.net/event_details/posters/000/016/873/large/210d531a42260cdabb175d827fe9982188b8931f.jpg?1702610258',
-    title: 'Event Name Here',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://m.thaiticketmajor.com/img_poster/prefix_1/0440/6440/magicman-2-world-tour-2025-2026-68b3d0ab1f656-l.jpg',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  // แถวที่ 2 (ให้ครบ 8 ใบเหมือนภาพ)
-  {
-    image:'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://www.thaiticketmajor.com/img_poster/prefix_1/0173/6173/one-lumpinee-2025-68be5297c4140-l.jpg',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://www.thaiticketmajor.com/img_poster/prefix_1/0468/6468/khemjira-ep7-temple-fair-screening-68b931b091655-l.png',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
-  },
-  {
-    image: 'https://www.thaiticketmajor.com/img_poster/prefix_1/0451/6451/the-lion-inside-68a3f988dda6e-l.png',
-    title: 'Event Name Here',
-    date: 'DD/MM/YYYY',
-    time: '00:00 น.',
-    location: 'Union Hall @ Union Mall Ladprao'
+const router = useRouter()
+const openEvent = (id) => router.push(`/event/${id}`)
+
+const query = ref('')
+const events = ref([])          // ← เก็บทั้งหมดจาก API
+const loading = ref(true)
+const error = ref(null)
+
+const API_HOST = import.meta.env.VITE_API_HOST || ''
+const toAbs = (u) => !u ? '' : (u.startsWith('http') ? u : API_HOST + u)
+const first = (...xs) => xs.find(x => x != null && x !== '')
+
+function mapEvent(e) {
+  return {
+    id: e.id,
+    title: e.title ?? e.name ?? 'Untitled',
+    date: first(e.start_date, e.startDate, e.date) ?? '',
+    location: e.location ?? e.venue ?? '',
+    img: toAbs(first(
+      e.poster_image_url, e.posterImageUrl,
+      e.detail_image_url, e.detailImageUrl
+    ))
   }
-]
+}
+
+async function loadEvents () {
+  try {
+    const res = await fetch('/api/events')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    events.value = data.map(mapEvent)
+  } catch (err) {
+    error.value = String(err?.message ?? err)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadEvents)
+
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  return q ? events.value.filter(e => e.title.toLowerCase().includes(q)) : events.value
+})
 </script>
 
 <template>
@@ -104,23 +84,22 @@ const events = [
   </div>
 </section>
 
-    <!-- GRID ผลลัพธ์อีเวนต์ -->
+     <!-- GRID ผลลัพธ์อีเวนต์ -->
     <section class="results">
       <div class="container">
-        <div class="grid">
-          <!-- ใช้การ์ดตาม component ที่ให้มา -->
-          <EventCard
-            v-for="(e, i) in events"
-            :key="i"
-            :image="e.image"
-            :title="e.title"
-            :date="e.date"
-            :time="e.time"
-            :location="e.location"
+        <div v-if="loading">กำลังโหลด…</div>
+        <div v-else-if="error">โหลดข้อมูลไม่สำเร็จ: {{ error }}</div>
+
+        <div v-else class="grid">
+          <Card
+            v-for="e in filtered"
+            :key="e.id"
+            :event="e"
+            @open="openEvent"  
           />
         </div>
 
-        <div class="more-row">
+        <div v-if="!loading && !error" class="more-row">
           <button class="more-btn">เพิ่มเติม</button>
         </div>
       </div>

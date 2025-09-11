@@ -1,30 +1,48 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import EventZigzagStrip from '../components/EventZigzagStrip.vue'
 import RecommendedSection from '../components/RecomSec.vue'
-import Event from './Event.vue'
-
+import { useRouter } from 'vue-router'
+const router = useRouter()
+function openEvent(id){ router.push(`/event/${id}`) }
 const query = ref('')
-const featured = ref([
-  { id:1, title:'JACKSON WANG - Magic Man', date:'SEP 12', img:'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop', location:'Impact Arena', city:'Bangkok', price:3500 },
-  { id:2, title:'KBTG TECHTOPIA 2025', date:'SEP 13', img:'https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=800&auto=format&fit=crop', location:'KBTG Park', city:'Bangkok', price:0 },
-  { id:3, title:'BITKUB SUMMIT 2025', date:'OCT 5', img:'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop', location:'QSNCC', city:'Bangkok', price:1500 },
-  { id:4, title:'GREENDAY TOUR', date:'FEB 25', img:'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=800&auto=format&fit=crop', location:'Impact Arena', city:'Bangkok', price:4200 },
-])
 
 // “แนะนำสำหรับคุณ” (demo data)
-const recommended = ref([
-  { id:11, title:'DOL CIBEL Live', date:'SEP 7',  img:'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop', location:'SOMEWHERE', city:'Bangkok', price:999 },
-  { id:12, title:'JACKSON WANG - Magic Man', date:'SEP 12', img:'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop', location:'Impact Arena', city:'Bangkok', price:3500 },
-  { id:13, title:'One Championship', date:'OCT 4', img:'https://images.unsplash.com/photo-1542401886-65d6c61db217?q=80&w=800&auto=format&fit=crop', location:'Impact', city:'Bangkok', price:1200 },
-  { id:14, title:'Idol Festival', date:'AUG 28', img:'https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?q=80&w=800&auto=format&fit=crop', location:'Thunder Dome', city:'Nonthaburi', price:850 },
-  { id:15, title:'Tech Career Fair', date:'SEP 22', img:'https://images.unsplash.com/photo-1531058020387-3be344556be6?q=80&w=800&auto=format&fit=crop', location:'QSNCC', city:'Bangkok', price:0 },
-  { id:16, title:'DOL CIBEL Live', date:'SEP 7',  img:'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop', location:'SOMEWHERE', city:'Bangkok', price:999 },
-  { id:17, title:'JACKSON WANG - Magic Man', date:'SEP 12', img:'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop', location:'Impact Arena', city:'Bangkok', price:3500 },
-  { id:18, title:'One Championship', date:'OCT 4', img:'https://images.unsplash.com/photo-1542401886-65d6c61db217?q=80&w=800&auto=format&fit=crop', location:'Impact', city:'Bangkok', price:1200 },
-  { id:19, title:'Idol Festival', date:'AUG 28', img:'https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?q=80&w=800&auto=format&fit=crop', location:'Thunder Dome', city:'Nonthaburi', price:850 },
-  { id:20, title:'Tech Career Fair', date:'SEP 22', img:'https://images.unsplash.com/photo-1531058020387-3be344556be6?q=80&w=800&auto=format&fit=crop', location:'QSNCC', city:'Bangkok', price:0 },
-])
+const recommended = ref([])
+const loading = ref(true)
+const error = ref(null)
+const API_HOST = import.meta.env.VITE_API_HOST || ''
+
+const toAbs = (u) => !u ? '' : (u.startsWith('http') ? u : API_HOST + u)
+const first = (...xs) => xs.find(x => x != null && x !== '')
+
+function mapSummaryToCard(e) {
+  return {
+    id: e.id,
+    title: e.title ?? e.name ?? 'Untitled',
+    date: first(e.start_date, e.startDate, e.date) ?? '',
+    location: e.location ?? e.venue ?? '',
+    img: toAbs(first(
+      e.poster_image_url, e.posterImageUrl,
+      e.detail_image_url, e.detailImageUrl
+    ))
+  }
+}
+async function loadEvents() {
+  try {
+    const res = await fetch('/api/events')   // ผ่าน proxy
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    recommended.value = data.map(mapSummaryToCard)
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadEvents)
+
 
 const posters = [
   { id:1, img:'https://res.theconcert.com/w_450,h_600,c_thumb/7b0cbc4598de3efdd357e1c658d54a4a4/06sep.jpg' },
@@ -70,9 +88,10 @@ function onSearch(){
         </section>
       </div>
     </header>
-    <main class="container">
-    <RecommendedSection :events="recommended" title="แนะนำสำหรับคุณ" />
-    </main>
+    <div class="page">
+    <div v-if="loading">กำลังโหลด…</div>
+    <div v-else-if="error">โหลดข้อมูลไม่สำเร็จ: {{ error }}</div>
+<RecommendedSection v-else :events="displayRecommended" title="แนะนำสำหรับคุณ" @open="openEvent"/>  </div>
 
 
    
