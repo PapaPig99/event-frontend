@@ -1,3 +1,46 @@
+<script setup>
+import { ref, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+
+/* ===== state ของ stepper ===== */
+const currentStep = 1
+
+/* ===== Router utils ===== */
+const router = useRouter()
+const route = useRoute()
+const routeId = computed(() => route.params.id)
+
+/* ===== ปุ่มย้อนกลับ / ไปหน้าถัดไป ===== */
+const goBack = () => router.back()
+const goNext = () => {
+  // TODO: ปรับปลายทางจริง เช่นไปหน้าที่เลือกโซน/ราคา
+  if (routeId.value) {
+    router.push({ name: 'concert-plan', params: { id: routeId.value } })
+  } else {
+    router.push({ name: 'concert-plan' })
+  }
+}
+
+/* ===== ข้อมูลจำลอง/แก้เป็นของจริงได้ ===== */
+const poster = ref(
+  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
+  // ตัวอย่างไฟล์ภายในโปรเจกต์:
+  // new URL('../assets/poster.jpg', import.meta.url).href
+)
+const title = ref('MARIAH CAREY The Celebration of Mimi')
+
+const shows = ref([
+  'Sat 11 Oct 2025 20:00', // TODO: เพิ่ม/แก้รอบจริง
+])
+const selectedShow = ref(shows.value[0])
+
+const seatmap = ref(
+  'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png'
+  // ตัวอย่างไฟล์ภายในโปรเจกต์:
+  // new URL('../assets/seatmap.png', import.meta.url).href
+)
+</script>
+
 <template>
   <div class="plan-page">
     <!-- แถว Back -->
@@ -7,115 +50,63 @@
 
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
-      <!-- โปสเตอร์ -->
       <div class="poster-wrap">
         <!-- TODO: เปลี่ยน poster เป็นไฟล์จริง (URL หรือไฟล์ใน src/assets) -->
         <img :src="poster" alt="Poster" class="poster" />
       </div>
 
-      <!-- ข้อมูล -->
       <div class="hero-info">
         <h1 class="event-title">{{ title }}</h1>
 
         <div class="link-row">
           <!-- TODO: แก้ id ให้ตรงกับ event จริง หรือผูกจาก route param -->
           <router-link :to="{ name: 'event-detail', params: { id: routeId || 1 } }" class="link-chip">
-            รายละเอียด →
+            รายละเอียด
           </router-link>
         </div>
 
+        <!-- รอบการแสดง + สถานะ -->
         <div class="chip-row">
-          <div class="show-chip">
-            <label for="show" class="show-label">รอบการแสดง</label>
-            <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
-              <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
-            </select>
-          </div>
-
+          <label for="show" class="show-label">รอบการแสดง</label>
+          <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
+            <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
+          </select>
           <button class="status-chip">ที่นั่งว่าง</button>
         </div>
       </div>
     </section>
 
-    <!-- Stepper -->
-    <section class="stepper">
-      <div class="step active">
-        <div class="ball">1</div>
-        <div class="label">ดูผังและที่นั่ง</div>
-      </div>
-      <div class="line"></div>
-      <div class="step">
-        <div class="ball">2</div>
-        <div class="label">เลือกประเภทที่นั่ง</div>
-      </div>
-      <div class="line"></div>
-      <div class="step">
-        <div class="ball">3</div>
-        <div class="label">ชำระเงิน</div>
+    <!-- Stepper (ภาพแบบที่ 2) -->
+    <section class="stepper2">
+      <div class="track"></div>
+      <div class="steps">
+        <div class="step" :class="{ active: currentStep >= 1 }">
+          <div class="ball">1</div>
+          <div class="label">ดูผังและที่นั่ง</div>
+        </div>
+        <div class="step" :class="{ active: currentStep >= 2 }">
+          <div class="ball">2</div>
+          <div class="label">เลือกประเภทที่นั่ง</div>
+        </div>
+        <div class="step" :class="{ active: currentStep >= 3 }">
+          <div class="ball">3</div>
+          <div class="label">ชำระเงิน</div>
+        </div>
       </div>
     </section>
 
-    <!-- หัวข้อ -->
     <h2 class="section-title">ดูผังการแสดง</h2>
 
-    <!-- ผังการแสดง -->
     <div class="seatmap-wrap">
       <!-- TODO: เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
       <img :src="seatmap" alt="Seat map" class="seatmap-img" />
     </div>
 
-    <!-- CTA -->
     <div class="cta-row">
-      <!-- TODO: ผูกไปหน้าถัดไป (เช่น /event/:id/plan/zone) -->
       <button class="next-btn" @click="goNext">ถัดไป</button>
     </div>
   </div>
 </template>
-
-<script setup>
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-
-/* ===== Router utils ===== */
-const router = useRouter()
-const route = useRoute()
-const routeId = computed(() => route.params.id)
-
-/* ===== ปุ่มย้อนกลับ ===== */
-const goBack = () => router.back()
-
-/* ===== เป้าหมายปุ่มถัดไป (ตัวอย่าง) ===== */
-const goNext = () => {
-  // TODO: ปรับปลายทางจริง เช่นไปหน้าที่เลือกโซน/ราคา
-  if (routeId.value) {
-    router.push({ name: 'concert-plan', params: { id: routeId.value } }) // หรือปลายทางอื่น
-  } else {
-    router.push({ name: 'concert-plan' })
-  }
-}
-
-/* ================== ใส่ข้อมูลจริงตรงนี้ ================== */
-/** โปสเตอร์ (ซ้ายบนในการ์ด) — แก้ URL เป็นรูปจริง หรือใช้ไฟล์ใน src/assets */
-const poster = ref(
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
-  // ตัวอย่างใช้ไฟล์: new URL('../assets/poster.jpg', import.meta.url).href
-)
-
-/** ชื่ออีเวนท์ */
-const title = ref('MARIAH CAREY The Celebration of Mimi') // TODO: แก้ชื่อจริง
-
-/** ตัวเลือก "รอบการแสดง" */
-const shows = ref([
-  'Sat 11 Oct 2025 20:00', // TODO: เพิ่ม/แก้รอบจริง
-])
-const selectedShow = ref(shows.value[0])
-
-/** ผังการแสดง (ภาพใหญ่กลางหน้า) */
-const seatmap = ref(
-  'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png'
-  // ตัวอย่างไฟล์: new URL('../assets/seatmap.png', import.meta.url).href
-)
-</script>
 
 <style scoped>
 :root{
@@ -139,7 +130,7 @@ const seatmap = ref(
   font-weight: 700; color: #333; font-size: 16px;
 }
 
-/* ===== Hero card (ใหญ่ขึ้น + gradient ที่ให้) ===== */
+/* ===== Hero card ===== */
 .hero-card{
   display: flex;
   align-items: center;
@@ -163,40 +154,90 @@ const seatmap = ref(
   color:#0b4b44; text-decoration: underline; font-weight:600; font-size:15px;
 }
 
-.chip-row{ display:flex; align-items:center; gap:14px; flex-wrap: wrap; }
-.show-chip{ display:flex; flex-direction:column; gap:6px; }
-.show-label{ font-size:13px; color:#333; font-weight:600; }
-select{
-  padding:8px 12px; border-radius:8px; border:1px solid #cfcfcf; font-size:14px;
-  background:#fff;
+/* รอบการแสดง + สถานะ */
+.chip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.status-chip{
-  background:#fff; border:1px solid #cfcfcf; padding:8px 14px;
-  border-radius:10px; font-weight:800; color:#111; cursor:default;
+.show-label {
+  font-size: 15px;
+  color: #111;
+  font-weight: 700;
+}
+select {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #cfcfcf;
+  font-size: 14px;
+  background: #f4fdfb;
+  cursor: pointer;
+}
+.status-chip {
+  background: #fff;
+  border: 1px solid #cfcfcf;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  color: #111;
+  cursor: default;
+  white-space: nowrap;
 }
 
-/* ===== Stepper ===== */
-.stepper{
-  margin: 28px 0 6px;
-  display: grid; grid-template-columns: 1fr auto 1fr auto 1fr;
-  align-items: center; justify-items: center;
+/* ===== Stepper (แบบภาพที่ 2) ===== */
+.stepper2{
+  --ball: 72px;
+  --track: 8px;
+  position: relative;
+  margin: 28px 0 12px;
 }
-.line{
-  height: 4px; width: 100%;
-  background: #e5e7eb; border-radius: 999px;
+.stepper2 .track{
+  position: absolute;
+  left: calc(var(--ball) / 2);
+  right: calc(var(--ball) / 2);
+  top: calc(var(--ball) / 2 - var(--track) / 2);
+  height: var(--track);
+  background: #e5e7eb;
+  border-radius: 999px;
+  z-index: 0;
 }
-.step{ text-align: center; color: #9ca3af; }
-.step .ball{
-  width: 56px; height: 56px; border-radius: 50%;
-  display: grid; place-items: center;
-  font-weight: 800; font-size: 20px;
-  background: #e5e7eb; color: #6b7280; margin-bottom: 6px;
+.stepper2 .steps{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  position: relative;
+  z-index: 1;
 }
-.step.active{ color: #111; }
-.step.active .ball{
-  background: #ffede4; color: var(--orange); border: 4px solid var(--orange);
+.stepper2 .step{
+  text-align: center;
+  flex: 0 0 auto;
+  width: 33.33%;
 }
-.step .label{ font-weight: 700; font-size: 14px; }
+.stepper2 .ball{
+  width: var(--ball);
+  height: var(--ball);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 28px;
+  background: #e0e0e0;
+  color: #000;
+  margin: 0 auto 10px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.04);
+}
+.stepper2 .label{
+  font-size: 18px;
+  font-weight: 800;
+  color: #111;
+}
+.stepper2 .step:not(.active) .label{
+  color: #6b7280;
+}
+.stepper2 .step.active .ball{
+  background: #ff6a13;
+  color: #fff;
+}
 
 /* ===== Section title ===== */
 .section-title{
@@ -216,15 +257,10 @@ select{
 .next-btn{
   background: var(--orange); color:#fff; border:none; cursor:pointer;
   padding: 12px 28px; border-radius: 30px; font-weight: 900; font-size: 20px;
-  box-shadow: 0 12px 24px rgba(255,106,19,.25);
 }
-
-/* Responsive */
 @media (max-width: 680px){
   .hero-card{ padding: 22px; }
   .poster{ width:110px; height:150px; }
   .event-title{ font-size:22px; }
-  .stepper{ grid-template-columns: 1fr 24px 1fr 24px 1fr; }
-  .step .ball{ width:46px; height:46px; font-size:18px; }
 }
 </style>
