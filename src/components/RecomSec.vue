@@ -1,30 +1,39 @@
 <script setup>
 import EventCard from './Card.vue'
+import { toRefs } from 'vue'
 
-defineProps({
-  title: { type: String, default: 'แนะนำสำหรับคุณ' },
-  events: { type: Array, required: true }
+const props = defineProps({
+  title:  { type: String, default: 'แนะนำสำหรับคุณ' },
+  events: { type: Array,  required: true }
 })
+// ดึงออกมาเพื่อใช้ใน template ได้ตรง ๆ
+const { title, events } = toRefs(props)
+
+const emit = defineEmits(['open'])
 </script>
 
 <template>
   <section class="recommended">
     <div class="row-rec">
       <div class="section-header">
-      <h2>{{ title }}</h2>
-      <a href="#" class="more">เพิ่มเติม</a>
-    </div>
-
-    <div class="scroll-viewport">
-      <div class="scroll-row">
-        <!-- ใช้ EventCard -->
-        <EventCard v-for="e in events" :key="e.id" :event="e" />
+        <h2>{{ title }}</h2>
+        <a href="#" class="more">เพิ่มเติม</a>
       </div>
-    </div>
 
+      <div class="scroll-viewport">
+        <div class="scroll-row">
+          <EventCard
+            v-for="e in events"
+            :key="e.id"
+            :event="e"
+            @open="emit('open', $event)"
+          />
+        </div>
+      </div>
     </div>
   </section>
 </template>
+
 
 <style scoped>
 .recommended{

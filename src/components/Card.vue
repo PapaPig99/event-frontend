@@ -1,7 +1,6 @@
 <script setup>
-defineProps({
-  event: { type: Object, required: true }
-})
+defineProps({ event: { type: Object, required: true } })
+const emit = defineEmits(['open'])
 </script>
 
 <template>
@@ -15,7 +14,8 @@ defineProps({
         <p><i class="fa-regular fa-calendar"></i> {{ event.date }}</p>
         <p><i class="fa-solid fa-location-dot"></i> {{ event.location }}</p>
       </div>
-      <button class="join-btn">เข้าร่วมงาน</button>
+      <button class="join-btn" @click="emit('open', event.id)">เข้าร่วมงาน</button>
+
     </div>
   </article>
 </template>
