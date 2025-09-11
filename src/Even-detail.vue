@@ -225,7 +225,7 @@ body { margin: 0; }
 
 /* HERO */
 .hero {
-  background: linear-gradient(90deg, #a8edea, #fed6e3);
+  background: linear-gradient(90deg, #20f00d8f 10%, #4cf3ff6a 60%);
   padding: 18px 0 28px;
 }
 
