@@ -3,8 +3,8 @@
   <nav class="navbar">
     <div class="logo"><img src="../assets/logo.png"></div>
     <ul class="menu">
-      <li><a href="#app">Home</a></li>
-      <li><a href="#" class="active">Event</a></li>
+      <li><a href="/">Home</a></li>
+      <li><a href="/event" class="active">Event</a></li>
       <li><a href="#">My Event</a></li>
     </ul>
     <div class="actions">
