@@ -1,4 +1,6 @@
-
+<script setup>
+const emit = defineEmits(['open-login'])
+</script>
 <template>
   <nav class="navbar">
     <div class="logo"><img src="../assets/logo.png"></div>
@@ -9,7 +11,7 @@
     </ul>
     <div class="actions">
       <a href="#"><i class="fa-regular fa-circle-question"></i> Help</a>
-      <button class="login-btn">เข้าสู่ระบบ</button>
+      <button @click="emit('open-login')" class="login-btn">เข้าสู่ระบบ</button>
     </div>
   </nav>
 </template>
