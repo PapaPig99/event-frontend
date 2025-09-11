@@ -40,7 +40,7 @@ defineProps({
 }
 @media (min-width: 1440px) {
   .row-rec {
-    padding: 0 22rem; /* desktop กว้างๆ */
+    padding: 0 15rem; /* desktop กว้างๆ */
   }
 }
 .section-header{
