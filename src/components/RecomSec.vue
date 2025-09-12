@@ -1,15 +1,34 @@
 <script setup>
 import EventCard from './Card.vue'
-import { toRefs } from 'vue'
+import { toRefs, computed } from 'vue'
 
 const props = defineProps({
-  title:  { type: String, default: 'แนะนำสำหรับคุณ' },
-  events: { type: Array,  required: true }
+  title:    { type: String, default: 'แนะนำสำหรับคุณ' },
+  events:   { type: Array,  required: true },
+  // หมวดที่จะกรอง (ค่าเริ่มต้น = Concert)
+  category: { type: [String, Array], default: 'Concert' }
 })
-// ดึงออกมาเพื่อใช้ใน template ได้ตรง ๆ
-const { title, events } = toRefs(props)
 
+const { title, events, category } = toRefs(props)
 const emit = defineEmits(['open'])
+
+// ปรับตัวช่วยเล็กน้อยให้ทนเคส/ช่องว่าง
+const norm = (s) => String(s ?? '').trim().toLowerCase()
+const wanted = computed(() =>
+  (Array.isArray(category.value) ? category.value : [category.value]).map(norm)
+)
+
+// ✅ กรองตามหมวด (รองรับทั้ง e.category / e.type / e.tags)
+const filtered = computed(() => {
+  return (events.value ?? []).filter(e => {
+    const cat = norm(e.category ?? e.type)
+    const tags = (Array.isArray(e.tags) ? e.tags : []).map(norm)
+    return wanted.value.some(w => cat.includes(w) || tags.some(t => t.includes(w)))
+  })
+})
+
+
+
 </script>
 
 <template>
@@ -20,16 +39,20 @@ const emit = defineEmits(['open'])
         <a href="#" class="more">เพิ่มเติม</a>
       </div>
 
-      <div class="scroll-viewport">
+      <div class="scroll-viewport" v-if="filtered.length">
         <div class="scroll-row">
           <EventCard
-            v-for="e in events"
+            v-for="e in filtered"
             :key="e.id"
             :event="e"
             @open="emit('open', $event)"
           />
         </div>
       </div>
+
+      <p v-else style="opacity:.7; padding: 12px 0 24px;">
+        ไม่มีรายการในหมวดนี้ตอนนี้นะครับ 🙂
+      </p>
     </div>
   </section>
 </template>
@@ -49,7 +72,7 @@ const emit = defineEmits(['open'])
 }
 @media (min-width: 1440px) {
   .row-rec {
-    padding: 0 15rem; /* desktop กว้างๆ */
+    padding: 0 25rem; /* desktop กว้างๆ */
   }
 }
 .section-header{
