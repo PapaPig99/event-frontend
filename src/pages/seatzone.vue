@@ -40,7 +40,7 @@ const zones = ref([
   { id:'A', label:'Zone A', desc:'ที่นั่งติดเวทีที่สุด', price: 12000, remaining: 31, qty: 0 },
   { id:'B', label:'Zone B', desc:'ที่นั่งติดเวทีที่สุด', price:  6500, remaining: 10, qty: 0 },
   { id:'C', label:'Zone C', desc:'ด้านข้างซ้าย-ขวา',   price:  5000, remaining: 10, qty: 0 },
-  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 1 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
+  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
 ])
 
 /* ติดตามโซนที่เพิ่งแก้ไขหลังสุด เพื่อเอาไปแสดงในสรุปด้านล่างให้เหมือนภาพ */
