@@ -45,7 +45,7 @@ const seatmap = ref(
   <div class="plan-page">
     <!-- แถว Back -->
     <div class="back-row">
-      <button class="back-btn" @click="goBack">← ย้อนกลับ</button>
+      <button class="back-btn" @click="goBack">ย้อนกลับ</button>
     </div>
 
     <!-- การ์ดหัวเรื่อง gradient -->
@@ -120,7 +120,6 @@ const seatmap = ref(
   margin: 0 auto;
   padding: 16px 18px 40px;
   box-sizing: border-box;
-  background: #fff;
 }
 
 /* Back */
@@ -185,59 +184,65 @@ select {
 }
 
 /* ===== Stepper (แบบภาพที่ 2) ===== */
-.stepper2{
-  --ball: 72px;
-  --track: 8px;
+.stepper2 {
+  --ball: 60px;          /* 🔽 ลดขนาดวงกลม จาก 72 → 60 */
+  --track: 6px;          /* 🔽 ลดความหนาเส้น */
   position: relative;
-  margin: 28px 0 12px;
+  margin: 60px 0 0;      /* 🔽 ลด margin-bottom ให้ห่างข้างล่างน้อยลง */
+  bottom: 20px;
 }
-.stepper2 .track{
+
+.stepper2 .track {
   position: absolute;
-  left: calc(var(--ball) / 2);
-  right: calc(var(--ball) / 2);
+  left: calc(var(--ball) / 2 + 10px);   /* 🔽 ขยับเส้นเข้ามา */
+  right: calc(var(--ball) / 2 + 10px);  /* 🔽 ขยับเส้นเข้ามา */
   top: calc(var(--ball) / 2 - var(--track) / 2);
   height: var(--track);
   background: #e5e7eb;
   border-radius: 999px;
   z-index: 0;
 }
-.stepper2 .steps{
+
+.stepper2 .steps {
   display: flex;
-  justify-content: space-between;
+  justify-content: space-between; /* 🔽 เว้นเท่า ๆ กัน */
   align-items: flex-start;
   position: relative;
   z-index: 1;
+  max-width: 600px;               /* 🔽 จำกัดความกว้างรวม */
+  margin: 0 auto;                 /* 🔽 จัดตรงกลาง */
 }
-.stepper2 .step{
+
+.stepper2 .step {
   text-align: center;
-  flex: 0 0 auto;
-  width: 33.33%;
+  flex: 1;                        /* 🔽 แต่ละ step กินพื้นที่เท่ากัน */
 }
-.stepper2 .ball{
+
+.stepper2 .ball {
   width: var(--ball);
   height: var(--ball);
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-weight: 800;
-  font-size: 28px;
+  font-size: 22px;
   background: #e0e0e0;
   color: #000;
-  margin: 0 auto 10px;
+  margin: 0 auto 6px;
   box-shadow: 0 2px 0 rgba(0,0,0,.04);
 }
-.stepper2 .label{
-  font-size: 18px;
-  font-weight: 800;
+
+.stepper2 .label {
+  font-size: 16px;
+  font-weight: 700;
   color: #111;
 }
-.stepper2 .step:not(.active) .label{
+
+.stepper2 .step:not(.active) .label {
   color: #6b7280;
 }
-.stepper2 .step.active .ball{
-  background: #ff6a13;
-  color: #fff;
-}
+
+.stepper2 .step.active:nth-child(1) .ball{ background:var(--orange); color:#fff; }
 
 /* ===== Section title ===== */
 .section-title{

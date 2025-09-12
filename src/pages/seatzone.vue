@@ -40,7 +40,7 @@ const zones = ref([
   { id:'A', label:'Zone A', desc:'ที่นั่งติดเวทีที่สุด', price: 12000, remaining: 31, qty: 0 },
   { id:'B', label:'Zone B', desc:'ที่นั่งติดเวทีที่สุด', price:  6500, remaining: 10, qty: 0 },
   { id:'C', label:'Zone C', desc:'ด้านข้างซ้าย-ขวา',   price:  5000, remaining: 10, qty: 0 },
-  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 1 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
+  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
 ])
 
 /* ติดตามโซนที่เพิ่งแก้ไขหลังสุด เพื่อเอาไปแสดงในสรุปด้านล่างให้เหมือนภาพ */
@@ -84,10 +84,7 @@ function formatTHB(n){
 
 <template>
   <div class="page">
-    <!-- Back -->
-    <div class="back-row">
-      <button class="back-btn" @click="goBack">← ย้อนกลับ</button>
-    </div>
+   
 
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
@@ -192,14 +189,9 @@ function formatTHB(n){
   max-width: 1120px;
   margin: 0 auto;
   padding: 16px 18px 40px;
-  background: #fff;
 }
 
-/* Back */
-.back-row{ margin: 6px 0 14px; }
-.back-btn{
-  background:none; border:0; font-weight:700; color:#333; cursor:pointer; font-size:16px;
-}
+
 
 /* HERO */
 .hero-card{
@@ -226,19 +218,64 @@ select{
 }
 
 /* STEPPER แบบภาพ */
-.stepper2{ --ball: 64px; --track: 8px; position:relative; margin:22px 0 10px; }
-.stepper2 .track{
-  position:absolute; left:calc(var(--ball)/2); right:calc(var(--ball)/2);
-  top:calc(var(--ball)/2 - var(--track)/2); height:var(--track); background:#e5e7eb; border-radius:999px;
+.stepper2 {
+  --ball: 60px;          /* 🔽 ลดขนาดวงกลม จาก 72 → 60 */
+  --track: 6px;          /* 🔽 ลดความหนาเส้น */
+  position: relative;
+  margin: 60px 0 0;      /* 🔽 ลด margin-bottom ให้ห่างข้างล่างน้อยลง */
+  bottom: 20px;
 }
-.stepper2 .steps{ display:flex; justify-content:space-between; align-items:flex-start; position:relative; z-index:1; }
-.stepper2 .step{ text-align:center; width:33.33%; }
-.stepper2 .ball{
-  width:var(--ball); height:var(--ball); border-radius:50%; display:grid; place-items:center;
-  background:#e0e0e0; color:#000; font-weight:800; font-size:26px; margin:0 auto 6px;
+
+.stepper2 .track {
+  position: absolute;
+  left: calc(var(--ball) / 2 + 10px);   /* 🔽 ขยับเส้นเข้ามา */
+  right: calc(var(--ball) / 2 + 10px);  /* 🔽 ขยับเส้นเข้ามา */
+  top: calc(var(--ball) / 2 - var(--track) / 2);
+  height: var(--track);
+  background: #e5e7eb;
+  border-radius: 999px;
+  z-index: 0;
 }
-.stepper2 .label{ font-weight:800; color:#111; }
-.stepper2 .step:not(.active) .label{ color:#9aa0a6; }
+
+.stepper2 .steps {
+  display: flex;
+  justify-content: space-between; /* 🔽 เว้นเท่า ๆ กัน */
+  align-items: flex-start;
+  position: relative;
+  z-index: 1;
+  max-width: 600px;               /* 🔽 จำกัดความกว้างรวม */
+  margin: 0 auto;                 /* 🔽 จัดตรงกลาง */
+}
+
+.stepper2 .step {
+  text-align: center;
+  flex: 1;                        /* 🔽 แต่ละ step กินพื้นที่เท่ากัน */
+}
+
+.stepper2 .ball {
+  width: var(--ball);
+  height: var(--ball);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 22px;
+  background: #e0e0e0;
+  color: #000;
+  margin: 0 auto 6px;
+  box-shadow: 0 2px 0 rgba(0,0,0,.04);
+}
+
+.stepper2 .label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111;
+}
+
+.stepper2 .step:not(.active) .label {
+  color: #6b7280;
+}
+
 .stepper2 .step.active:nth-child(2) .ball{ background:var(--orange); color:#fff; } /* step 2 active */
 
 /* Title */
@@ -248,7 +285,7 @@ select{
 .zones{ display:grid; gap:14px; }
 .zone-card{
   display:flex; justify-content:space-between; align-items:center;
-  background:#f6f7f8; border-radius:14px; padding:18px 16px;
+  background:#e6e6e6; border-radius:14px; padding:18px 16px;
   border:1px solid #eee;
 }
 .zone-left{ display:flex; flex-direction:column; gap:8px; }
@@ -298,7 +335,7 @@ select{
   color: #fff;
   border: none;
   padding: 10px 22px;
-  border-radius: 12px;
+  border-radius: 999px; 
   font-weight: 700;
   cursor: pointer;
 }

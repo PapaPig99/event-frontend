@@ -1,7 +1,19 @@
 // src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
+import Home from '../pages/AppHome.vue'     // เดี๋ยวเราจะสร้างไฟล์นี้
+import Event from '../pages/Event.vue'
+import EvenDetail from '../pages/Event-detail.vue'
+import ConcertPlan from '../pages/ConcertPlan.vue' 
+import SeatZone from '../pages/seatzone.vue'
 
-// ✅ export แบบ named และ default ให้ครบ
+const routes = [
+    { path: '/', component: Home },
+    { path: '/event', component: Event },
+    { path: '/event/:id', component: EvenDetail, name: 'event-detail', props: true },
+    { path: '/event/:id/plan', component: ConcertPlan, name: 'concert-plan', props: true },
+    { path: '/event/:id/seat-zone', component: SeatZone, name: 'seat-zone', props: true }
+]
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
