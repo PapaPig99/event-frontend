@@ -4,45 +4,130 @@ const emit = defineEmits(['open'])
 </script>
 
 <template>
-  <article class="card">
-    <div class="thumb">
+  <article class="card" @click.self="emit('open', event.id)">
+    <figure class="poster">
       <img :src="event.img" :alt="event.title" />
-    </div>
-    <div class="body">
-      <h3 class="title">{{ event.title }}</h3>
-      <div class="meta">
-        <p><i class="fa-regular fa-calendar"></i> {{ event.date }}</p>
-        <p><i class="fa-solid fa-location-dot"></i> {{ event.location }}</p>
-      </div>
-      <button class="join-btn" @click="emit('open', event.id)">เข้าร่วมงาน</button>
+      <!-- เงาไล่ลงล่างสำหรับพื้นหลังสว่าง -->
+      <i class="shade" aria-hidden="true"></i>
+    </figure>
 
+    <div class="body">
+      <h3 class="title" :title="event.title">{{ event.title }}</h3>
+
+      <ul class="meta">
+        <li>
+          <i class="fa-regular fa-calendar"></i>
+          <span>{{ event.date }}</span>
+        </li>
+        <li class="loc">
+          <i class="fa-solid fa-location-dot"></i>
+          <span :title="event.location">{{ event.location }}</span>
+        </li>
+      </ul>
+
+      <button class="btn" @click="emit('open', event.id)">เข้าร่วมงาน</button>
     </div>
   </article>
 </template>
 
 <style scoped>
-/* กำหนดความกว้างด้วย clamp: ไม่เล็กเกิน/ไม่อ้วนเกิน */
+/* ====== Card ====== */
 .card{
-  --card-w: clamp(210px, 22vw, 260px); /* ปรับได้ */
-  width: var(--card-w);
-  flex: 0 0 var(--card-w);             /* ให้คงความกว้างเมื่ออยู่ในแถวเลื่อน */
-  background:#fffdfd;border-radius:16px;overflow:hidden;
-  box-shadow:0 6px 16px rgba(0,0,0,.1);
-  transition:transform .2s;
+  --w: clamp(220px, 22vw, 270px);
+  --radius: 18px;
+  --shadow: 0 8px 22px rgba(16, 24, 40, .10);
+  --border: 1px solid rgba(16, 24, 40, .06);
+
+  width: var(--w);
+  flex: 0 0 var(--w);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: var(--shadow);
+  border: var(--border);
+  overflow: clip;             /* กันซึมขอบโค้ง */
+  display: grid;
+  grid-template-rows: auto 1fr;
+  transition: transform .18s ease, box-shadow .18s ease;
 }
-.card:hover{transform:translateY(-6px)}
-
-/* ใช้ aspect-ratio ให้รูปนิ่ง 3:4 จะไม่ยืดอ้วน */
-.thumb{ position:relative; aspect-ratio: 3 / 4; }
-.thumb img{
-  position:absolute; inset:0; width:100%; height:100%;
-  object-fit:cover; display:block;
+.card:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(16,24,40,.14);
 }
 
+/* ====== Poster (แก้ขอบดำ/ช่องว่าง) ====== */
+.poster{
+  position: relative;
+  margin: 0;
+  aspect-ratio: 4 / 5;        /* โปสเตอร์ส่วนใหญ่จะลงตัวกับ 4:5 */
+  overflow: hidden;
+}
+.poster img{
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;          /* ไม่มีแถบดำแน่นอน */
+  object-position: 50% 30%;   /* โฟกัสสูงขึ้นนิดให้หัวไม่โดนตัด */
+  display: block;
+}
+.poster .shade{
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, transparent 65%, rgba(0,0,0,.05));
+  pointer-events: none;
+}
 
-.body{padding:12px}
-.title{font-size:14px;font-weight:700;margin:0 0 3px;padding-bottom: 0;text-align: left;}
-.meta{font-size:12px;color:#666;display: block;}
-.join-btn{background:#ff2d2d;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:600;cursor:pointer;text-align: center;width: 100%;}
-.join-btn:hover{background:#d92020}
+/* เส้นแบ่งนุ่ม ๆ */
+.card::after{
+  content:"";
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(16,24,40,.08), transparent);
+}
+
+/* ====== Body ====== */
+.body{
+  padding: 12px 14px 14px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  row-gap: 8px;
+}
+
+/* ชื่อ 2 บรรทัดพอดี */
+.title{
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #0f172a;
+  display: -webkit-box;
+  text-align: left;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* เมตาแบบกะทัดรัด */
+.meta{
+  list-style: none; padding: 0; margin: 0;
+  display: grid; row-gap: 6px;
+  font-size: 12.5px; color: #475569;
+}
+.meta li{ display: grid; grid-template-columns: 16px 1fr; column-gap: 8px; align-items: center; }
+.meta i{ text-align: center; opacity: .9; }
+
+/* ตำแหน่งยาว → ตัดด้วย ellipsis */
+.meta .loc span{
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ปุ่มวางชิดล่างพอดี ไม่ดัน spacing */
+.btn{
+  margin-top: auto;                /* ✅ ดันลงสุด */
+  height: 44px;                    /* ✅ ขนาดเท่ากันทุกใบ */
+  border: none;
+  border-radius: 10px;
+  background: #ff3b30;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn:hover{ background: #e22f26; box-shadow: 0 8px 18px rgba(255,59,48,.26); }
+.btn:active{ transform: translateY(1px); }
 </style>
