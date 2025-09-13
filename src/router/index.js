@@ -24,6 +24,8 @@ export const router = createRouter({
 
     { path: '/myevent',   name: 'my-event',     component: () => import('../pages/MyEvent.vue') },
     { path: '/help',      name: 'help',         component: () => import('../pages/Help.vue') },
+    { path: '/admin',   name: 'admin',     component: () => import('../Admin/login.vue') },
+    { path: '/create-event',   name: 'admin',     component: () => import('../Admin/create-event.vue') },
 
     // กันหลงทาง
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../pages/NotFound.vue') },
