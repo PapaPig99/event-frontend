@@ -3,15 +3,53 @@ name: Build & Push Docker image
 on:
   push:
     branches: [ "main" ]
-  # ปิด pull_request ไปก่อน ถ้า PR มาจาก fork จะไม่มี secrets
-  # pull_request:
-  #   branches: [ "main" ]
 
 jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # หา Dockerfile อัตโนมัติ + ตั้งค่าตัวแปร context/file
+      - name: Detect Dockerfile path
+        id: detect
+        run: |
+          set -e
+          echo "Repo tree:"
+          ls -la
+          echo "---- try common dirs ----"
+          ls -la event-frontend || true
+          ls -la frontend || true
+          ls -la app || true
+
+          # candidates ที่พบบ่อย
+          CANDS=(
+            "./Dockerfile"
+            "./event-frontend/Dockerfile"
+            "./frontend/Dockerfile"
+            "./app/Dockerfile"
+          )
+
+          FOUND=""
+          for p in "${CANDS[@]}"; do
+            if [ -f "$p" ]; then
+              FOUND="$p"
+              break
+            fi
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "❌ ไม่พบ Dockerfile ในตำแหน่งมาตรฐาน (./, ./event-frontend, ./frontend, ./app)"
+            exit 1
+          fi
+
+          CONTEXT="$(dirname "$FOUND")"
+          echo "✅ FOUND Dockerfile: $FOUND"
+          echo "✅ CONTEXT: $CONTEXT"
+
+          # ส่งออกเป็น outputs
+          echo "file=$FOUND" >> $GITHUB_OUTPUT
+          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -25,11 +63,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & Push (event-frontend/Dockerfile)
+      - name: Build & Push
         uses: docker/build-push-action@v5
         with:
-          context: ./event-frontend
-          file: ./event-frontend/Dockerfile
+          context: ${{ steps.detect.outputs.context }}
+          file: ${{ steps.detect.outputs.file }}
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:latest
