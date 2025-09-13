@@ -1,16 +1,20 @@
-name: Docker Image CI
+name: Build & Push Docker image
 
 on:
   push:
     branches: [ "main" ]
+  # ปิด pull_request ไปก่อน ถ้า PR มาจาก fork จะไม่มี secrets
+  # pull_request:
+  #   branches: [ "main" ]
 
 jobs:
-  build:
+  docker:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -21,9 +25,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push
+      - name: Build & Push (event-frontend/Dockerfile)
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./event-frontend
+          file: ./event-frontend/Dockerfile
           push: true
-          tags: puodwanli09/event-frontend:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
