@@ -10,44 +10,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # หา Dockerfile อัตโนมัติ + ตั้งค่าตัวแปร context/file
+      # Detect Dockerfile & context แบบอัตโนมัติ
       - name: Detect Dockerfile path
         id: detect
         run: |
           set -e
-          echo "Repo tree:"
+          echo "== repo tree =="
           ls -la
-          echo "---- try common dirs ----"
+          echo "== try common dirs =="
           ls -la event-frontend || true
           ls -la frontend || true
           ls -la app || true
 
-          # candidates ที่พบบ่อย
-          CANDS=(
-            "./Dockerfile"
-            "./event-frontend/Dockerfile"
-            "./frontend/Dockerfile"
-            "./app/Dockerfile"
-          )
-
+          CANDS=( "./Dockerfile" "./event-frontend/Dockerfile" "./frontend/Dockerfile" "./app/Dockerfile" )
           FOUND=""
           for p in "${CANDS[@]}"; do
-            if [ -f "$p" ]; then
-              FOUND="$p"
-              break
-            fi
+            if [ -f "$p" ]; then FOUND="$p"; break; fi
           done
-
           if [ -z "$FOUND" ]; then
-            echo "❌ ไม่พบ Dockerfile ในตำแหน่งมาตรฐาน (./, ./event-frontend, ./frontend, ./app)"
+            echo "❌ Not found Dockerfile in ./, ./event-frontend, ./frontend, ./app"
             exit 1
           fi
-
           CONTEXT="$(dirname "$FOUND")"
-          echo "✅ FOUND Dockerfile: $FOUND"
-          echo "✅ CONTEXT: $CONTEXT"
-
-          # ส่งออกเป็น outputs
+          echo "FOUND=$FOUND"
+          echo "CONTEXT=$CONTEXT"
           echo "file=$FOUND" >> $GITHUB_OUTPUT
           echo "context=$CONTEXT" >> $GITHUB_OUTPUT
 
