@@ -110,17 +110,6 @@ function onCancel(){ history.back() }
     </header>
 
     <div class="body">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-title">Navigation</div>
-        <nav class="menu">
-          <a class="menu-item active">Overview</a>
-          <div class="menu-section">Events</div>
-          <a class="menu-item">All Events</a>
-          <a class="menu-item">Create Event</a>
-        </nav>
-      </aside>
-
       <!-- Main -->
       <main class="content">
         <h1 class="page-big">Create event</h1>
@@ -219,10 +208,10 @@ function onCancel(){ history.back() }
                   </div>
                 </div>
 
-                <div class="row">
+                <!-- <div class="row">
                   <label>ที่อยู่</label>
                   <input class="inp" v-model="form.address" placeholder="ที่อยู่/รายละเอียดเพิ่มเติม" />
-                </div>
+                </div> -->
               </div>
             </div>
           </div>
@@ -418,7 +407,7 @@ function onCancel(){ history.back() }
 .switch input{ display:none; }
 .switch .slider{ position:absolute; inset:0; background:#e5e7eb; border-radius:999px; transition:.2s; }
 .switch .slider:before{ content:''; position:absolute; height:18px; width:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.16); }
-.switch input:checked + .slider{ background:#3b82f6; }
+.switch input:checked + .slider{ background:#4ED642; }
 .switch input:checked + .slider:before{ transform:translateX(20px); }
 
 /* icons */
