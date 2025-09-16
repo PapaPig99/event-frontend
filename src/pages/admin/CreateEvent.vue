@@ -8,8 +8,7 @@ const form = reactive({
   category: '',
   organizer: '',
 
-  // ประเภท/สถานะอีเวนต์
-  type: 'offline',      // offline | online | hybrid
+  //สถานะอีเวนต์
   status: false,        // false=ปิดใช้งาน, true=เผยแพร่
 
   // จำหน่ายบัตร
@@ -44,7 +43,7 @@ rounds: [
     price: 0
   }
 ]
-}) // ✅ ปิด reactive object ตรงนี้
+}) 
 
 /** preview รูป */
 const posterUrl = ref('')
@@ -115,30 +114,7 @@ function onCancel(){ history.back() }
 
 <template>
   <div class="shell">
-    <!-- Topbar -->
-    <header class="topbar">
-      <div class="brand">
-        <span class="logo">JoinUp</span>
-      </div>
-      <div class="top-actions">
-        <input class="search" placeholder="Search…" />
-        <div class="user"><i class="i-user" /> Username</div>
-        <button class="btn small ghost">Signout</button>
-      </div>
-    </header>
-
     <div class="body">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-title">Navigation</div>
-        <nav class="menu">
-          <a class="menu-item active">Overview</a>
-          <div class="menu-section">Events</div>
-          <a class="menu-item">All Events</a>
-          <a class="menu-item">Create Event</a>
-        </nav>
-      </aside>
-
       <!-- Main -->
       <main class="content">
         <h1 class="page-big">Create event</h1>
@@ -194,24 +170,6 @@ function onCancel(){ history.back() }
                   </div>
                 </div>
 
-                 <!--<div class="row">
-                  <label>ประเภทอีเวนต์ *</label>
-                  <div class="types">
-                    <label class="type">
-                      <input type="radio" value="offline" v-model="form.type" />
-                      <span class="dot"></span><span>Offline</span>
-                    </label>
-                    <label class="type">
-                      <input type="radio" value="online" v-model="form.type" />
-                      <span class="dot"></span><span>Online</span>
-                    </label>
-                    <label class="type">
-                      <input type="radio" value="hybrid" v-model="form.type" />
-                      <span class="dot"></span><span>Hybrid</span>
-                    </label>
-                  </div>
-                </div>-->
-
                 <!-- เปิด/ปิดจำหน่าย -->
                 <div class="row two">
                   <div>
@@ -255,10 +213,10 @@ function onCancel(){ history.back() }
                   </div>
                 </div>
 
-                <div class="row">
+                <!-- <div class="row">
                   <label>ที่อยู่</label>
                   <input class="inp" v-model="form.address" placeholder="ที่อยู่/รายละเอียดเพิ่มเติม" />
-                </div>
+                </div> -->
               </div>
             </div>
           </div>
@@ -430,23 +388,6 @@ function onCancel(){ history.back() }
 /* ===== shell ===== */
 .shell{ min-height:100vh; background:var(--bg); display:flex; flex-direction:column; color:var(--text); }
 
-/* topbar */
-.topbar{ height:56px; background:var(--brand); color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 16px; position:sticky; top:0; z-index:20; }
-.logo{ font-weight:800; letter-spacing:.3px; }
-.top-actions{ display:flex; align-items:center; gap:10px; }
-.search{ height:34px; border:none; border-radius:8px; padding:0 10px; min-width:220px; }
-.user{ display:flex; align-items:center; gap:6px; }
-.i-user{ display:inline-block; width:16px; height:16px; border-radius:50%; background:#fff; }
-
-/* layout */
-.body{ flex:1; display:grid; grid-template-columns: 220px minmax(0, 1fr); align-items:start; }
-.sidebar{ background:#fff; border-right:1px solid var(--line); min-height:calc(100vh - 56px); padding:14px 10px; }
-.sidebar-title{ font-size:12px; color:var(--muted); margin:6px 8px; letter-spacing:.08em; }
-.menu{ display:flex; flex-direction:column; gap:4px; }
-.menu-section{ font-size:12px; color:var(--muted); margin:8px 8px 4px; }
-.menu-item{ display:block; padding:8px 10px; border-radius:10px; color:#374151; text-decoration:none; cursor:pointer; }
-.menu-item.active{ background:#fce7e7; color:#a31616; font-weight:600; }
-
 /* content */
 .content{ padding:18px 22px; width:100%; max-width:1200px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
 
@@ -455,7 +396,7 @@ function onCancel(){ history.back() }
 
 /* cards */
 .card{ background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:14px; overflow:hidden; width:100%; }
-.card-head{ background:#e3e8ef; padding:10px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
+.card-head{ background:#ACBCCB; padding:10px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; }
 .card-head h2{ font-size:14px; margin:0; }
 .chev{ border:none; background:transparent; font-size:16px; cursor:pointer; color:#334155; }
 .card-body{ padding:14px; }
@@ -491,7 +432,7 @@ function onCancel(){ history.back() }
 .switch input{ display:none; }
 .switch .slider{ position:absolute; inset:0; background:#e5e7eb; border-radius:999px; transition:.2s; }
 .switch .slider:before{ content:''; position:absolute; height:18px; width:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.16); }
-.switch input:checked + .slider{ background:#3b82f6; }
+.switch input:checked + .slider{ background:#4ED642; }
 .switch input:checked + .slider:before{ transform:translateX(20px); }
 
 /* (ถ้ามีใช้งาน) event type radios */
@@ -527,7 +468,6 @@ function onCancel(){ history.back() }
 .ml-auto{ margin-left:auto; }
 .mt12{ margin-top:12px; }
 
-/* ✅ 3 คอลัมน์ตาม Figma */
 .grid3{ display:grid; grid-template-columns: 1.4fr 1fr 1fr; gap:10px; }
 
 /* tiers table */
@@ -548,7 +488,7 @@ function onCancel(){ history.back() }
 }
 .pill input{ accent-color:#3b82f6; transform:translateY(1px); }
 
-/* ✅ ปุ่ม + เพิ่มรอบ แบบเต็มกว้าง */
+
 .addbar{
   width:100%; height:42px; border-radius:10px;
   border:1px dashed #dfe3e8; background:#f5f7fa; color:#374151; cursor:pointer;
