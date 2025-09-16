@@ -1,3 +1,4 @@
+<!-- src/App.vue -->
 <script setup>
 import { ref } from 'vue'
 
@@ -8,6 +9,7 @@ import RegisterModal from './components/RegisterModal.vue'
 
 const showLogin = ref(false)
 const showRegister = ref(false)
+
 function openLogin() { showLogin.value = true }
 const openRegister = () => (showRegister.value = true)
 
@@ -29,15 +31,19 @@ function goSignin(){ showRegister.value = false; showLogin.value = true }
     <NavBar @open-login="openLogin" />
     <router-view />
     <Footer />
+
     <!-- โมดัลล็อกอิน -->
-  <LoginModal
-    v-model="showLogin"
-    @login="handleLogin"
-    @signup="goSignup"   />
+    <LoginModal
+      v-model="showLogin"
+      @login="handleLogin"
+      @signup="goSignup"
+    />
+
     <!-- โมดัลสมัครสมาชิก -->
-  <RegisterModal
-    v-model="showRegister"
-    @signup="handleSignup"
-    @signin="goSignin"  />
+    <RegisterModal
+      v-model="showRegister"
+      @signup="handleSignup"
+      @signin="goSignin"
+    />
   </div>
 </template>
