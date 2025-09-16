@@ -2,8 +2,8 @@
   <div class="login-page">
     <div class="login-card">
       <div class="logo">
-
-        <img src="@/assets/logo.png" alt="JoinUp Logo" />
+        <!-- ใช้ path relative -->
+        <img src="../assets/logo.png" alt="JoinUp Logo" />
       </div>
       <form @submit.prevent="handleLogin">
         <div class="form-group">
@@ -75,17 +75,16 @@ export default {
 
 .login-card {
   background: #fff;
-  padding: 50px 50px ;
+  padding: 40px 30px;
   border-radius: 16px;
-  width: 470px;
-  height: 470px;
+  width: 360px;
   box-shadow: 0px 6px 20px rgba(0, 0, 0, 0.15);
   text-align: center;
 }
 
 .logo img {
-  width: 200px;
-  margin-bottom: 10px;
+  width: 150px;
+  margin-bottom: 20px;
 }
 
 .form-group {
@@ -106,6 +105,7 @@ export default {
   background: #fff;
   border: 1px solid #ddd;
   padding: 8px 12px;
+  border-radius: 6px;
 }
 
 .input-box i {
@@ -127,6 +127,7 @@ export default {
   color: #fff;
   padding: 10px;
   border: none;
+  border-radius: 6px;
   font-size: 15px;
   cursor: pointer;
   transition: background 0.3s;
