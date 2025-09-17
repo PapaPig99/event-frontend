@@ -40,9 +40,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  OWNER: ${{ github.repository_owner }}
-  BACKEND_IMG: ghcr.io/${{ github.repository_owner }}/event-backend
-  FRONTEND_IMG: ghcr.io/${{ github.repository_owner }}/event-frontend
+  OWNER_LC: ${{ toLower(github.repository_owner) }}
+  BACKEND_IMG: ghcr.io/${{ toLower(github.repository_owner) }}/event-backend
+  FRONTEND_IMG: ghcr.io/${{ toLower(github.repository_owner) }}/event-frontend
 
 jobs:
   build_and_push:
