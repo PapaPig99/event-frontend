@@ -4,6 +4,9 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    __IMAGE_BASE__: JSON.stringify("http://localhost:3137/images/"),
+  },
   server: {
     proxy: {
       '/api': {                 // ทุกคำขอที่ขึ้นต้นด้วย /api

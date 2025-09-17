@@ -1,5 +1,5 @@
 <template>
-        <div class="title">Overview</div>
+        <div class="title">Event Detail</div>
 
 </template>
 

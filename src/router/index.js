@@ -12,7 +12,7 @@ const router = createRouter({
         { path: 'event',       name: 'event-list',  component: () => import('@/pages/Event.vue') },
         { path: 'event/:id',   name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
         { path: 'event/:id/plan',     name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true },
-        { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'), props: true },
+        { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'),  },
         { path: 'myevent',     name: 'my-event',    component: () => import('@/pages/MyEvent.vue') },
         { path: 'help',        name: 'help',        component: () => import('@/pages/Help.vue') },
       ],
@@ -24,10 +24,12 @@ const router = createRouter({
       path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
-        // { path: '', redirect: '/admin/overview' },
-        // { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
-        { path: 'events/all',    name: 'admin-events-all',    component: () => import('@/pages/admin/AllEvent.vue') },
-        { path: 'events/create', name: 'admin-events-create', component: () => import('@/pages/admin/CreateEvent.vue') }
+        { path: '', redirect: '/admin/overview' },
+        { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
+        { path: 'allevents', name: 'admin-all-events',   component: () => import('@/pages/admin/AllEvent.vue') , props: true },
+        { path: 'create',    name: 'admin-create-event', component: () => import('@/pages/admin/CreateEvent.vue') },
+        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/EditEvent.vue'), props: true },
+        { path: 'events/:id/detail',   name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue')},
       ],
     },
 
