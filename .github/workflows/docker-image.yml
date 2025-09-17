@@ -1,22 +1,191 @@
-name: Docker Image CI
+# name: Docker Image CI
+
+# on:
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+
+# jobs:
+#   build:
+#     runs-on: self-hosts  
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Build Docker image
+#         run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:v0.0.1 .
+
+#       - name: Login Docker Hub
+#         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+#       - name: Push image
+#         run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:v0.0.1
+
+name: ci-e2e
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+# กันวิ่งทับกันเวลามี push ถี่ ๆ
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write   # ต้องมีเพื่อ push ขึ้น GHCR
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+  BACKEND_IMG: ghcr.io/${{ github.repository_owner }}/event-backend
+  FRONTEND_IMG: ghcr.io/${{ github.repository_owner }}/event-frontend
 
 jobs:
-  build:
-    runs-on: self-hosts  
+  build_and_push:
+    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:v0.0.1 .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Login Docker Hub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push image
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/event-frontend:v0.0.1
+      # ----- Build & Push BACKEND -----
+      - name: Build & Push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./event-backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMG }}:${{ github.sha }}
+            ${{ env.BACKEND_IMG }}:latest
+          cache-from: type=registry,ref=${{ env.BACKEND_IMG }}:cache
+          cache-to: type=registry,ref=${{ env.BACKEND_IMG }}:cache,mode=max
+
+      # ----- Build & Push FRONTEND -----
+      - name: Build & Push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./event-frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMG }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMG }}:latest
+          cache-from: type=registry,ref=${{ env.FRONTEND_IMG }}:cache
+          cache-to: type=registry,ref=${{ env.FRONTEND_IMG }}:cache,mode=max
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build_and_push
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull images to test
+        run: |
+          docker pull $BACKEND_IMG:${GITHUB_SHA}
+          docker pull $FRONTEND_IMG:${GITHUB_SHA}
+
+      # สร้าง compose override เพื่อบังคับใช้ images ที่เพิ่ง build (แทนการ build จาก Dockerfile ใน compose เดิม)
+      - name: Create compose override (use GHCR images)
+        run: |
+          cat > compose.ghcr.override.yml <<'YAML'
+          services:
+            backend:
+              image: ${BACKEND_IMG}:${GITHUB_SHA}
+              # ถ้าต้องการส่ง .env CICD ให้ uncomment ด้านล่างและจัดการ secrets/vars เอง
+              # environment:
+              #   DATABASE_URL: ${DATABASE_URL}
+            frontend:
+              image: ${FRONTEND_IMG}:${GITHUB_SHA}
+          YAML
+
+      # 🔧 ถ้าโปรเจกต์ของคุณต้องมีไฟล์ .env สำหรับ backend ใน CI:
+      # - ใส่ secrets ใน repo แล้วสร้างไฟล์ที่นี่ เช่น:
+      #   echo "DATABASE_URL=$DATABASE_URL" >> event-backend/.env
+      # (ตอนนี้ workflow จะใช้ .env ใน repo ตามที่ compose ระบุอยู่แล้ว)
+
+      - name: Start stack with Docker Compose
+        run: |
+          docker compose -f compose.yaml -f compose.ghcr.override.yml up -d
+          docker compose ps
+
+      # รอให้บริการพร้อม (เช็ค frontend 8081 และ backend 3137)
+      - name: Wait for services (frontend & backend)
+        run: |
+          set -e
+          echo "Waiting for frontend http://localhost:8081 ..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8081 > /dev/null; then echo "Frontend up"; break; fi
+            sleep 2
+            if [ $i -eq 60 ]; then echo "Frontend NOT ready"; docker compose logs frontend; exit 1; fi
+          done
+
+          echo "Waiting for backend http://localhost:3137 ..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3137 > /dev/null; then echo "Backend up"; break; fi
+            sleep 2
+            if [ $i -eq 60 ]; then echo "Backend NOT ready"; docker compose logs backend; exit 1; fi
+          done
+
+      # ====== Cypress / Playwright E2E ======
+      # โครงสร้างสมมติว่าคุณมีโฟลเดอร์ e2e พร้อม package.json และสคริปต์ cypress
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'e2e/package-lock.json'
+
+      - name: Install E2E deps
+        working-directory: e2e
+        run: npm ci
+
+      - name: Run E2E (Cypress)
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:8081
+          API_URL: http://localhost:3137
+          # DATABASE_URL: ${{ secrets.DATABASE_URL }}  # ถ้าจำเป็น
+        run: |
+          npx cypress run --browser chrome --e2e
+
+      - name: Upload Cypress Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            e2e/cypress/videos
+            e2e/cypress/screenshots
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          docker compose logs mysql || true
+          docker compose logs backend || true
+          docker compose logs frontend || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
