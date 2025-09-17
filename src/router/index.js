@@ -10,14 +10,13 @@ const router = createRouter({
       path: '/',
       component: () => import('@/layouts/UserLayout.vue'),
       children: [
-        { path: '',              name: 'home',          component: () => import('@/pages/AppHome.vue') },
-        { path: 'event',         name: 'event-list',    component: () => import('@/pages/Event.vue') },
-        // ต้องล็อกอินก่อนถึงดูรายละเอียด/วางแผน/เลือกที่นั่ง/ดู myevent ได้
-        { path: 'event/:id',     name: 'event-detail',  component: () => import('@/pages/Event-detail.vue'), props: true, meta: { requiresAuth: true } },
-        { path: 'event/:id/plan',      name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true, meta: { requiresAuth: true } },
-        { path: 'event/:id/seat-zone', name: 'seat-zone',     component: () => import('@/pages/seatzone.vue'),   props: true, meta: { requiresAuth: true } },
-        { path: 'myevent',       name: 'my-event',      component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
-        { path: 'help',          name: 'help',          component: () => import('@/pages/Help.vue') },
+        { path: '',            name: 'home',        component: () => import('@/pages/AppHome.vue') },
+        { path: 'event',       name: 'event-list',  component: () => import('@/pages/Event.vue') },
+        { path: 'event/:id',   name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
+        { path: 'event/:id/plan',     name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true },
+        { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'), props: true },
+        { path: 'myevent',     name: 'my-event',    component: () => import('@/pages/MyEvent.vue') },
+        { path: 'help',        name: 'help',        component: () => import('@/pages/Help.vue') },
       ],
     },
 
