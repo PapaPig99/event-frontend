@@ -7,10 +7,9 @@ import { useRouter, useRoute } from 'vue-router'
 const router = useRouter()
 const route  = useRoute()
 const goBack = () => router.back()
-const payNow = () => {
-  // TODO: ใส่เส้นทางหน้าชำระเงินจริง
-  // router.push({ name: 'checkout', params: { id: route.params.id } })
-  alert('ไปชำระเงิน (ตัวอย่าง)') 
+function goToPayment() {
+  const id = route.params.id
+  router.push({ name: 'payment', params: { id } })
 }
 
 /* =========================================================
@@ -171,7 +170,7 @@ function formatTHB(n){
 
   <div class="sum-actions">
     <button class="btn-back" @click="goBack">ย้อนกลับ</button>
-    <button class="btn-pay" @click="goPay">ชำระเงิน</button>
+    <button class="btn-pay" @click="goToPayment">ชำระเงิน</button>
   </div>
 </section>
 
@@ -207,7 +206,7 @@ function formatTHB(n){
 .event-title{ margin:0; font-size:22px; font-weight:800; color:#111; }
 
 .chip-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.link-chip{ color:#0b4b44; text-decoration:underline; font-weight:600; }
+.link-chip{ color:#000000; text-decoration:underline; font-weight:600; }
 .show-chip{ display:flex; flex-direction:column; gap:6px; }
 .show-label{ font-size:13px; color:#333; font-weight:600; }
 select{
@@ -331,12 +330,13 @@ select{
 
 /* ปุ่มย้อนกลับ (เทา) — ซ้าย */
 .btn-back{
-  background: #bdbdbd;          /* เทาเหมือนภาพตัวอย่าง */
+  background: #20f00dcc;          /* เทาเหมือนภาพตัวอย่าง */
   color: #fff;
   border: none;
   padding: 10px 22px;
   border-radius: 999px; 
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 16px;
   cursor: pointer;
 }
 

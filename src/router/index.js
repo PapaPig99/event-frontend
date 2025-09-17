@@ -1,27 +1,30 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // ====== Zone User ======
-    {
+
+    // ===== Zone Public =====
+     {
       path: '/',
       component: () => import('@/layouts/UserLayout.vue'),
-      children: [
+       children: [
         { path: '',            name: 'home',        component: () => import('@/pages/AppHome.vue') },
         { path: 'event',       name: 'event-list',  component: () => import('@/pages/Event.vue') },
         { path: 'event/:id',   name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
         { path: 'event/:id/plan',     name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true },
-        { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'),  },
+        { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'), props: true },
+        { path: 'event/:id/payment', name: 'payment',   component: () => import('@/pages/Payment.vue'), props: true },
         { path: 'myevent',     name: 'my-event',    component: () => import('@/pages/MyEvent.vue') },
         { path: 'help',        name: 'help',        component: () => import('@/pages/Help.vue') },
       ],
     },
-    // ====== Zone Admin ======
+    
+    // ===== Zone Admin =====
     { path: '/admin/login', name: 'admin-login', component: () => import('@/pages/admin/Login.vue') },
-
     {
-      path: '/admin',
+     path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
         { path: '', redirect: '/admin/overview' },
@@ -33,8 +36,8 @@ const router = createRouter({
       ],
     },
 
-    // กันหลงทาง
-    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/pages/NotFound.vue') },
+    // 404
+    { path: '/:pathMatch(.*)*',   name: 'not-found',          component: () => import('@/pages/NotFound.vue') },
   ],
 })
 
