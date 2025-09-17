@@ -1,4 +1,3 @@
-<!-- src/pages/admin/Login.vue -->
 <template>
   <div class="login-page">
     <div class="login-card">
@@ -37,7 +36,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import logo from '@/assets/logo.png'  // ใช้ alias @ (ชี้ไปที่ /src)
+import logo from '@/assets/logo.png'  
 
 const username = ref('')
 const password = ref('')
@@ -49,13 +48,13 @@ const handleLogin = () => { alert(`เข้าสู่ระบบด้วย
 
 <style scoped>
 .login-page{display:flex;justify-content:center;align-items:center;height:100vh;background:linear-gradient(135deg,#ff5f5f,#ff6f47)}
-.login-card{background:#fff;padding:40px 30px;border-radius:16px;width:360px;box-shadow:0 6px 20px rgba(0,0,0,.15);text-align:center}
+.login-card{background:#fff;padding:50px 40px;border-radius:16px;width:360px;box-shadow:0 6px 20px rgba(0,0,0,.15);text-align:center}
 .logo img{width:150px;margin-bottom:20px}
 .form-group{text-align:left;margin-bottom:18px}
 .form-group label{font-size:14px;color:#333;display:block;margin-bottom:6px}
-.input-box{display:flex;align-items:center;background:#fff;border:1px solid #ddd;padding:8px 12px;border-radius:6px}
+.input-box{display:flex;align-items:center;background:#fff;border:1px solid #ddd;padding:8px 12px;}
 .input-box i{color:#777;margin-right:8px;cursor:pointer}
 .input-box input{flex:1;border:none;outline:none;font-size:14px}
-.login-btn{width:100%;background:#333;color:#fff;padding:10px;border:none;border-radius:6px;font-size:15px;cursor:pointer;transition:background .3s}
+.login-btn{width:100%;background:#333;color:#fff;padding:10px;border:none;font-size:15px;cursor:pointer;transition:background .3s}
 .login-btn:hover{background:#000}
 </style>
