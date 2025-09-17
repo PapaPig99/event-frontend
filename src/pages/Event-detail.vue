@@ -1,53 +1,149 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-/* =========================================================
-   TODO: รูปภาพ
-   - วางรูปโปสเตอร์ไว้ใน src/assets/ แล้วแก้ชื่อไฟล์ให้ตรง
-   - วางรูปผังที่นั่ง (seat map) ไว้ใน src/assets/ เช่น mariah_seatmap.jpg
-   - ใช้ new URL(..., import.meta.url).href ให้ path ถูกตอน build/docker
-========================================================= */
-const posterSrc   = 'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'   // TODO: เปลี่ยนชื่อไฟล์จริง
-const seatmapSrc  = 'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png' // TODO: เปลี่ยนชื่อไฟล์จริง
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router' 
 
-/* =========================================================
-   TODO: ข้อมูลอีเวนท์ (ข้อความต่าง ๆ แก้ไขได้เลย)
-========================================================= */
-const event = {
-  category: 'คอนเสิร์ต',                                                  // TODO
-  title: 'MARIAH CAREY The Celebration of Mimi',                           // TODO
-  dateText: 'วันเสาร์ที่ 11 ตุลาคม 2568',                                   // TODO
-  venueText: 'อิมแพค ชาเลนเจอร์ ฮอลล์ เมืองทองธานี',                      // TODO
-  timeText: '19:00 น.',                                                    // TODO
-  priceText: '20,000 / 15,000 / 12,000 / 9,000 / 7,500 / 6,500 / 5,000 / 3,500 บาท', // TODO
-  poster: posterSrc,
-  seatmap: seatmapSrc
+/* ========= ตัวแปรที่เทมเพลตใช้ ========= */
+const event = ref({
+  category: '',
+  title: '',
+  dateText: '',
+  venueText: '',
+  timeText: '',
+  priceText: '',
+  poster: '',
+  seatmap: '',
+})
+
+/* ========= โหลดจาก API ตาม id ใน URL ========= */
+const route = useRoute()
+const router = useRouter()
+function goToConcertPlan() {
+  const id = route.params.id
+  router.push({ name: 'concert-plan', params: { id } })
 }
 
-/* ✅ popup state */
+onMounted(async () => {
+  try {
+    const id = route.params.id
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const d = await res.json()
+
+    // ✅ สร้างข้อความราคาแบบ fallback
+    const priceText = buildPriceText(d)
+
+    event.value = {
+      category: d.category ?? '',
+      title: d.title ?? '',
+      dateText: fmtThaiDate(d.startDate),
+      venueText: d.location ?? '',
+      timeText : fmtThaiTime(d.doorOpenTime),
+      priceText,
+      poster:   d.posterImageUrl  || d.detailImageUrl || fallbackPoster,
+      seatmap:  d.seatmapImageUrl || d.detailImageUrl || fallbackSeatmap,
+    }
+  } catch (e) {
+    console.error('load event failed:', e)
+  }
+})
+
+/* ========= utils แปลงวันที่/เวลา ========= */
+function fmtThaiDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' })
+}
+function fmtThaiTime(hms) {
+  if (!hms) return ''
+  return String(hms).slice(0, 5) + ' น.'
+}
+
+/* ========= รูป fallback ========= */
+const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
+
+/* ========= เพิ่ม state สำหรับ modal ========= */
 const isSeatmapOpen = ref(false)
+const seatmapLarge = ref('')
 
-/* ถ้ามีภาพความละเอียดสูงกว่าตัว thumbnail ให้ใส่ลิงก์ไว้ที่นี่
-   ถ้าไม่มี ใช้ event.seatmap เดิมก็ได้ */
-const seatmapLarge = ref(
-  'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png'
-  // TODO: เปลี่ยนเป็น URL ภาพใหญ่ (ถ้ามี), หรือ new URL('./assets/xxx.png', import.meta.url).href
-)
-
-/* เปิด/ปิด + ป้องกัน body scroll */
-const openSeatmap = () => {
+function openSeatmap() {
   isSeatmapOpen.value = true
-  document.documentElement.style.overflow = 'hidden'
+  seatmapLarge.value = event.value.seatmap
 }
-const closeSeatmap = () => {
+function closeSeatmap() {
   isSeatmapOpen.value = false
-  document.documentElement.style.overflow = ''
 }
 
-/* ปิดด้วยปุ่ม Esc */
-const onKey = e => { if (e.key === 'Escape') closeSeatmap() }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+/* ========= helper: สร้างข้อความ "ราคาบัตร" แบบครอบคลุม ========= */
+function buildPriceText(d) {
+  // 1) ถ้า backend ส่ง priceText มาแล้ว ใช้อันนั้นเลย
+  if (d && typeof d.priceText === 'string' && d.priceText.trim()) {
+    return d.priceText.trim()
+  }
+
+  // 2) รวมราคาจากโครงสร้างต่าง ๆ
+  const set = new Set()
+
+  // min/max ระดับงาน
+  if (isNum(d?.minPrice)) set.add(Number(d.minPrice))
+  if (isNum(d?.maxPrice)) set.add(Number(d.maxPrice))
+
+  // zones บนสุด
+  if (Array.isArray(d?.zones)) {
+    d.zones.forEach(z => {
+      if (isNum(z?.price))    set.add(Number(z.price))
+      if (isNum(z?.minPrice)) set.add(Number(z.minPrice))
+      if (isNum(z?.maxPrice)) set.add(Number(z.maxPrice))
+    })
+  }
+
+  // sessions[].zones
+  if (Array.isArray(d?.sessions)) {
+    d.sessions.forEach(s => {
+      if (isNum(s?.minPrice)) set.add(Number(s.minPrice))
+      if (isNum(s?.maxPrice)) set.add(Number(s.maxPrice))
+      if (Array.isArray(s?.zones)) {
+        s.zones.forEach(z => {
+          if (isNum(z?.price))    set.add(Number(z.price))
+          if (isNum(z?.minPrice)) set.add(Number(z.minPrice))
+          if (isNum(z?.maxPrice)) set.add(Number(z.maxPrice))
+        })
+      }
+    })
+  }
+
+  const prices = [...set].filter(n => Number.isFinite(n))
+  if (prices.length === 0) return '—'     // ไม่มีข้อมูลราคาเลย ให้แสดงขีด
+
+  // เรียงจากมาก → น้อย เพื่อฟีลแบบ 20,000 / 15,000 / ...
+  prices.sort((a, b) => b - a)
+
+  // ใช้รูปแบบไทยและหน่วย
+  const txt = prices.map(n => n.toLocaleString('th-TH')).join(' / ')
+  const unit = (d?.currency && String(d.currency).toUpperCase() !== 'THB')
+    ? d.currency
+    : 'บาท'
+  return `${txt} ${unit}`
+}
+
+function isNum(v) {
+  return v !== null && v !== undefined && !isNaN(Number(v))
+}
+
+const stageSection = ref(null)
+
+// เลื่อนแบบเผื่อมี header fixed โดยเว้น offset 80px (ปรับได้)
+function scrollToStage() {
+  const el = stageSection.value
+  if (!el) return
+  const y = el.getBoundingClientRect().top + window.pageYOffset - 80
+  window.scrollTo({ top: y, behavior: 'smooth' })
+}
+
 </script>
+
+
+
 
 <template>
   <div class="detail-page">
@@ -55,8 +151,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     <section class="hero fullbleed">
       <div class="container">
         <div class="crumb">
-          <!-- TODO: ถ้าจะให้ย้อนหน้า ใช้ router-link ได้ -->
-          <span class="back">← รายละเอียด</span>
+          <a href="#desc" class="back">รายละเอียด</a>
         </div>
 
         <div class="hero-body">
@@ -69,30 +164,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <h1 class="title">{{ event.title }}</h1>
 
             <div class="facts">
-              <!-- ซ้าย: วัน/สถานที่/เวลา -->
               <ul class="fact-list">
                 <li>
-                  <svg viewBox="0 0 24 24" class="ic">
-                    <path d="M7 2v2H5a2 2 0 0 0-2 2v1h18V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm14 7H3v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9zM5 13h4v4H5v-4z"/>
-                  </svg>
+                  <i class="fa-regular fa-calendar"></i>
                   <div>
                     <div class="label">วันที่แสดง</div>
                     <div class="val">{{ event.dateText }}</div>
                   </div>
                 </li>
                 <li>
-                  <svg viewBox="0 0 24 24" class="ic">
-                    <path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
-                  </svg>
+                  <i class="fa-solid fa-location-dot"></i>
                   <div>
                     <div class="label">สถานที่แสดง</div>
                     <div class="val">{{ event.venueText }}</div>
                   </div>
                 </li>
                 <li>
-                  <svg viewBox="0 0 24 24" class="ic">
-                    <path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm.5-12H11v5l4.25 2.52.75-1.23-3.5-2.04V8z"/>
-                  </svg>
+                  <i class="fa-regular fa-clock"></i>
                   <div>
                     <div class="label">เวลาแสดง</div>
                     <div class="val">{{ event.timeText }}</div>
@@ -100,12 +188,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </li>
               </ul>
 
-              <!-- ขวา: ราคาบัตร -->
               <div class="price-box">
                 <div class="price-head">
-                  <svg viewBox="0 0 24 24" class="ic">
-                    <path d="M12 1a11 11 0 1 0 11 11A11.013 11.013 0 0 0 12 1zm1 17h-2v-2h2zm1.07-7.75-.9.92A1.5 1.5 0 0 0 13 13h-2v-.5a2.5 2.5 0 0 1 .73-1.77l1.24-1.26A1.99 1.99 0 1 0 9 7H7a4 4 0 1 1 6.07 3.25z"/>
-                  </svg>
+                  <i class="fa-regular fa-money-bill-1"></i>
                   <span>ราคาบัตร</span>
                 </div>
                 <div class="price-text">{{ event.priceText }}</div>
@@ -113,33 +198,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </div>
 
             <div class="cta-row">
-              <button class="choose-btn">เลือกรอบ/ประเภทบัตร</button>
-            </div>
+  <button class="choose-btn" @click="scrollToStage">เลือกรอบ/ประเภทบัตร</button>
+</div>
+
           </div>
         </div>
       </div>
     </section>
 
     <!-- ผังการแสดง & รอบการแสดง -->
-<section class="stage">
-  <div class="container">
-    <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
+    <section class="stage" ref="stageSection" id="stage-section">
+      <div class="container">
+        <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
 
-    <div class="stage-card">
-      <!-- ⬇️ คลิกแล้วเปิด -->
-      <img
-        :src="event.seatmap"
-        alt="Seat map"
-        class="seatmap"
-        @click="openSeatmap"
-      />
-          <div class="stage-info">
-            <div class="venue-line">
-              <svg viewBox="0 0 24 24" class="ic">
-                <path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
-              </svg>
-              <span>{{ event.venueText }}</span>
-            </div>
+        <div class="stage-card">
+  <img :src="event.seatmap" alt="Seat map" class="seatmap" @click="openSeatmap" />
+  <div class="stage-info">
+    <div class="venue-line">
+      <svg viewBox="0 0 24 24" class="ic">
+        <path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+      </svg>
+      <span>{{ event.venueText }}</span>
+    </div>
+
+
 
             <div class="stage-price">
               <span class="muted">ราคาบัตร</span>
@@ -151,7 +233,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <div class="chip-label">วันที่แสดง</div>
                 <div class="chip-val">{{ event.dateText }}</div>
               </div>
-              <button class="buy-btn">ซื้อตั๋ว</button>
+              <button class="buy-btn" @click="goToConcertPlan">ซื้อตั๋ว</button>
+
             </div>
           </div>
         </div>
@@ -159,43 +242,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </section>
 
     <!-- รายละเอียด -->
-    <section class="desc">
-      <div class="container">
-        <h2 class="section-title">รายละเอียด</h2>
-        <h3 class="desc-title">{{ event.title }}</h3>
-
-        <!-- TODO: วางย่อหน้าเนื้อหาได้ตามจริง (คัดลอกข้อความยาวในรูป) -->
-        <p>จำหน่ายบัตร</p>
-        <p>เปิดจำหน่ายบัตร รอบ Public sale วันเสาร์ที่ 19 กรกฎาคม 2568 เวลา 10.00 น. เป็นต้นไป เฉพาะ www.joinup.com เท่านั้นและจะเปิดขายทุกช่องทางในวันอาทิตย์ที่ 20 กรกฎาคม 2568 เวลา 10.00 น. เป็นต้นไป</p>
-        <h4>
-  กลุ่มบริษัทธนบุรีพานิช ภูมิใจนำเสนอ คอนเสิร์ตระดับโลก กับดีว่าตลอดกาล “มารายห์ แครี” <br>
-  “Mariah Carey - The Celebration of MIMI : Live in Bangkok”
-  <br>11 ตุลาคม 2568 ณ อิมแพ็ค ชาเลนเจอร์ เมืองทองธานี
-</h4>
-        <p>กลุ่มบริษัท ธนบุรีพานิช จำกัด ผู้นำธุรกิจยานยนต์ของไทย ทั้งในด้านการประกอบและการเป็นตัวแทนจำหน่ายรถยนต์ Mercedes-Benz <br>ภายใต้ชื่อ “เบนซ์ธนบุรี” รวมถึงการเป็นผู้แทนจำหน่ายรถยนต์ไฟฟ้าแบรนด์ Geely <br>ประกาศความพร้อมในการเป็นผู้สนับสนุนหลักในการจัดคอนเสิร์ตระดับโลก “Mariah Carey - The Celebration of MIMI : Live in Bangkok” <br>ซึ่งจะจัดขึ้นในวันที่ 11 ตุลาคม 2568 ณ อิมแพ็ค ชาเลนเจอร์ เมืองทองธานี</p>
-        <p>ประเทศไทยเป็นหนึ่งในจุดหมายสำคัญของทัวร์ โดยเป็นการริเริ่มของกลุ่มธนบุรีพานิช ในฐานะผู้สนับสนุนหลัก <br>ร่วมมือกับทีมงานมืออาชีพจาก Maximage ในการเชิญศิลปินระดับตำนานมาร่วมสร้างปรากฏการณ์ <br>ซึ่งนับเป็นโอกาสสำคัญที่แฟนเพลงชาวไทยและจากทั่วภูมิภาคจะได้สัมผัสโชว์ระดับโลกจากดีว่าระดับตำนาน เพื่อเฉลิมฉลองครบรอบ <br>20 ปีของอัลบั้มระดับมาสเตอร์พีซ The Emancipation of Mimi</p>
-        <p>เตรียมใจให้พร้อม กับโมเมนต์ระดับตำนาน! เมื่อดีว่าเสียงสวรรค์ของโลก Mariah Carey เจ้าของ 5 รางวัล Grammy Awards <br>จากการเข้าชิงถึง 34 ครั้ง จะกลับมาระเบิดเวทีให้แฟนชาวไทยได้ฟังบทเพลงฮิต “We Belong Together” “Shake It Off” <br>และ “It’s Like That” พร้อมบทเพลงฮิตตลอดกาล “Hero,” “Fantasy,” “Vision of Love,” และ “All I Want for Christmas Is You” <br>ที่ทุกคนรอทั้งปีเพื่อจะได้ร้องตาม</p>
-        <p>ห้ามพลาดกับโมเมนต์แบบจัดเต็มกับคอนเสิร์ตรอบเดียวในกรุงเทพฯ เพราะโชว์นี้เกิดขึ้น ไม่ใช่เพราะบังเอิญ <br>แต่เพราะกลุ่มธนบุรีพานิชตั้งใจให้เกิด! ไม่ดูรอบนี้...อาจไม่มีอีกเลย</p>
-        <p>สำหรับผู้ที่สนใจจองบัตรคอนเสิร์ต “Mariah Carey: The Celebration of MIMI - Live In Bangkok” ในรอบ พรีเซล 18 กรกฎาคม นี้ <br>สงวนสิทธิ์สำหรับลูกค้าเบนซ์ธนบุรีและผู้สนับสนุนเท่านั้น เปิดขายบัตรอย่างเป็นทางการ 19 กรกฎาคม นี้ เริ่มเวลา 10.00 น. <br>บัตรราคา 20,000 บาท รับของที่ระลึกสุดพิเศษจากงานฯ สามารถจองผ่านทางเว็บไซต์ www.thaiticketmajor.com โทร. 02-262-3456 <br>และเคาน์เตอร์ไทยทิกเก็ตเมเจอร์ทุกสาขาทั่วประเทศ</p>
-        <p>คอนเสิร์ตที่ไม่ควรพลาด วันเดียวเท่านั้น!  11 ตุลาคมนี้ ณ อิมแพ็ค ชาเลนเจอร์ เมืองทองธานี รอบเดียวเท่านั้น ราคาบัตร 3,500 / <br>5,000 / 6,500 / 7,500 / 9,000 / 12,000 / 15,000 / 20,000 บาท</p>
-        <p>ติดตามทุกการเคลื่อนไหวผ่านแฮชแท็ก <br>#TheCelebrationOfMimi <br>#MariahCarey <br>#MariahCareyLiveInThailand <br>#Mimi20 <br>#ThonburiPhanich</p>
-    </div>
-    </section>
-    <!-- ✅ Modal: popup seatmap -->
-<div
-  v-if="isSeatmapOpen"
-  class="modal-backdrop"
-  @click.self="closeSeatmap"
-  role="dialog"
-  aria-modal="true"
-  aria-label="Seat map full view"
->
-  <div class="modal-content">
-    <button class="modal-close" @click="closeSeatmap" aria-label="Close">×</button>
-    <img :src="seatmapLarge || event.seatmap" alt="Seat map large" class="modal-img" />
+    <section id="desc" class="desc">
+  <div class="container">
+    <h2 class="section-title">รายละเอียด</h2>
+    <h3 class="desc-title">{{ event.title }}</h3>
+    <p>จำหน่ายบัตร</p>
   </div>
-</div>
+</section>
 
+
+    <!-- Modal -->
+    <div v-if="isSeatmapOpen" class="modal-backdrop" @click.self="closeSeatmap">
+      <div class="modal-content">
+        <button class="modal-close" @click="closeSeatmap">×</button>
+        <img :src="seatmapLarge" alt="Seat map large" class="modal-img" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -273,6 +335,27 @@ body { margin: 0; }
 .ic { width: 22px; height: 22px; fill: #111; flex: 0 0 auto; }
 .label { color: #111; font-weight: 700; }
 .val { color: #222; }
+
+/* ===== Stage card (พื้นหลังดำ) ===== */
+.stage-card .venue-line {
+  color: #fff;                /* ให้ข้อความขาว */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.stage-card .venue-line .ic {
+  fill: #fff;                 /* บังคับให้ SVG icon เป็นขาว */
+  width: 20px;
+  height: 20px;
+}
+
+
+.stage { 
+  padding: 22px 0 10px; 
+  scroll-margin-top: 80px; /* ปรับตามความสูง header ถ้ามี */
+}
 
 
 .price-head { display: flex; align-items: center; gap: 8px; font-weight: 800; }
@@ -353,7 +436,7 @@ body { margin: 0; }
 /* รายละเอียด */
 .desc { padding: 10px 0 44px; }
 .desc-title { font-size: 18px; font-weight: 800; margin: 10px 0 14px; }
-.desc p { line-height: 1.9; color: #111; margin: 10px 0; }
+.desc p { line-height: 1.9; color: #000000; margin: 10px 0; }
 
 /* ให้ thumbnail แสดงว่า “คลิกได้” */
 .seatmap { cursor: zoom-in; }

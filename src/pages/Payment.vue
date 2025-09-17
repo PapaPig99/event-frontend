@@ -209,7 +209,7 @@ function cancelOrder() {
 }
 .hero-info{ display:flex; flex-direction:column; gap:10px; }
 .event-title{ margin:0; font-size:22px; font-weight:800; color:#111; }
-.link-chip{ color:#0b4b44; text-decoration: underline; font-weight:600; }
+.link-chip{ color:#000000; text-decoration: underline; font-weight:600; }
 
 .chip-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .show-label{ font-size:13px; color:#333; font-weight:600; }
