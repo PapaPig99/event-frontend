@@ -15,6 +15,7 @@ const router = createRouter({
         { path: 'event/:id',   name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
         { path: 'event/:id/plan',     name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true },
         { path: 'event/:id/seat-zone', name: 'seat-zone',   component: () => import('@/pages/seatzone.vue'), props: true },
+        { path: 'event/:id/payment', name: 'payment',   component: () => import('@/pages/Payment.vue'), props: true },
         { path: 'myevent',     name: 'my-event',    component: () => import('@/pages/MyEvent.vue') },
         { path: 'help',        name: 'help',        component: () => import('@/pages/Help.vue') },
       ],

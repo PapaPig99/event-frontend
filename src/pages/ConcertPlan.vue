@@ -12,13 +12,9 @@ const routeId = computed(() => route.params.id)
 
 /* ===== ปุ่มย้อนกลับ / ไปหน้าถัดไป ===== */
 const goBack = () => router.back()
-const goNext = () => {
-  // TODO: ปรับปลายทางจริง เช่นไปหน้าที่เลือกโซน/ราคา
-  if (routeId.value) {
-    router.push({ name: 'concert-plan', params: { id: routeId.value } })
-  } else {
-    router.push({ name: 'concert-plan' })
-  }
+function goToSeatzone() {
+  const id = route.params.id
+  router.push({ name: 'seat-zone', params: { id } })
 }
 
 /* ===== ข้อมูลจำลอง/แก้เป็นของจริงได้ ===== */
@@ -43,10 +39,7 @@ const seatmap = ref(
 
 <template>
   <div class="plan-page">
-    <!-- แถว Back -->
-    <div class="back-row">
-      <button class="back-btn" @click="goBack">ย้อนกลับ</button>
-    </div>
+  
 
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
@@ -76,7 +69,7 @@ const seatmap = ref(
       </div>
     </section>
 
-    <!-- Stepper (ภาพแบบที่ 2) -->
+    <!-- Stepper(ภาพแบบที่ 2) -->
     <section class="stepper2">
       <div class="track"></div>
       <div class="steps">
@@ -98,12 +91,13 @@ const seatmap = ref(
     <h2 class="section-title">ดูผังการแสดง</h2>
 
     <div class="seatmap-wrap">
-      <!-- TODO: เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
+      <!-- TODO:เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
       <img :src="seatmap" alt="Seat map" class="seatmap-img" />
     </div>
 
     <div class="cta-row">
-      <button class="next-btn" @click="goNext">ถัดไป</button>
+      <button class="btn-back" @click="goBack">ย้อนกลับ</button>
+      <button class="next-btn" @click="goToSeatzone">ถัดไป</button>
     </div>
   </div>
 </template>
@@ -124,9 +118,15 @@ const seatmap = ref(
 
 /* Back */
 .back-row { margin: 10px 0 20px; }
-.back-btn{
-  background: none; border: none; cursor: pointer;
-  font-weight: 700; color: #333; font-size: 16px;
+.btn-back{
+  background: #20f00dcc;          /* เทาเหมือนภาพตัวอย่าง */
+  color: #fff;
+  border: none;
+  padding: 10px 22px;
+  border-radius: 999px; 
+  font-weight: 800;
+  font-size: 16px;
+  cursor: pointer;
 }
 
 /* ===== Hero card ===== */
@@ -150,7 +150,7 @@ const seatmap = ref(
 }
 .link-row{ margin-bottom:6px; }
 .link-chip{
-  color:#0b4b44; text-decoration: underline; font-weight:600; font-size:15px;
+  color:#000000; text-decoration: underline; font-weight:600; font-size:15px;
 }
 
 /* รอบการแสดง + สถานะ */
@@ -258,10 +258,20 @@ select {
 .seatmap-img{ width: 100%; height: auto; display: block; }
 
 /* ===== CTA ===== */
-.cta-row{ display: flex; justify-content: flex-end; margin-top: 22px; }
+.cta-row{ display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px; }
 .next-btn{
-  background: var(--orange); color:#fff; border:none; cursor:pointer;
-  padding: 12px 28px; border-radius: 30px; font-weight: 900; font-size: 20px;
+  background: linear-gradient(90deg, #ff6a13, #ff3d00);
+  color: #fff;
+  border: none;
+  padding: 10px 26px;
+  border-radius: 999px;          /* โค้งมนแบบแคปซูล */
+  font-weight: 800;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
 }
 @media (max-width: 680px){
   .hero-card{ padding: 22px; }
