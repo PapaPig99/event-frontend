@@ -9,7 +9,7 @@ const router = createRouter({
      {
       path: '/',
       component: () => import('@/layouts/UserLayout.vue'),
-      children: [
+       children: [
         { path: '',            name: 'home',        component: () => import('@/pages/AppHome.vue') },
         { path: 'event',       name: 'event-list',  component: () => import('@/pages/Event.vue') },
         { path: 'event/:id',   name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
@@ -24,14 +24,15 @@ const router = createRouter({
     // ===== Zone Admin =====
     { path: '/admin/login', name: 'admin-login', component: () => import('@/pages/admin/Login.vue') },
     {
-      path: '/admin',
+     path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
         { path: '', redirect: '/admin/overview' },
         { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
-        { path: 'allevents', name: 'admin-all-events',   component: () => import('@/pages/admin/AllEvent.vue') },
+        { path: 'allevents', name: 'admin-all-events',   component: () => import('@/pages/admin/AllEvent.vue') , props: true },
         { path: 'create',    name: 'admin-create-event', component: () => import('@/pages/admin/CreateEvent.vue') },
-        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/edit-event.vue'), props: true },
+        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/EditEvent.vue'), props: true },
+        { path: 'events/:id/detail',   name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue')},
       ],
     },
 

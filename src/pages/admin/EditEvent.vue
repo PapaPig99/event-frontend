@@ -1,7 +1,6 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
 /** router */
 const route = useRoute()
 const router = useRouter()

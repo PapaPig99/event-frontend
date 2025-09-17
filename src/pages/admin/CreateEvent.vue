@@ -98,9 +98,12 @@ function onCancel(){ history.back() }
 </script>
 
 <template>
-  <!-- ไม่ต้องมี Topbar/Sidebar/shell เพราะมาจาก AdminLayout หมดแล้ว -->
-  <h1 class="page-big">Create event</h1>
+      <section class="create-events">
 
+      <header class="toolbar">
+
+        <div class="title">Create event</div>
+      </header>
   <!-- ข้อมูลอีเวนต์ -->
   <section class="card">
     <header class="card-head accent">
@@ -312,10 +315,26 @@ function onCancel(){ history.back() }
     <button class="btn ghost"   @click="onCancel">ยกเลิก</button>
     <button class="btn primary" :disabled="!isValid" @click="onSubmit">บันทึก</button>
   </div>
+  </section>
+
 </template>
 
 <style scoped>
-/* ไม่ต้องมี shell/topbar/sidebar เพราะอยู่ใน AdminLayout แล้ว */
+.create-events { 
+  padding: 20px; 
+}
+.title {
+  color: #5f6063;   
+  font-size: 20px;  
+  font-weight: 400; 
+}
+/* แถวบนสุด */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
 .page-big{ font-size:20px; font-weight:700; margin:10px 0 12px; }
 .card{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; margin-bottom:14px; overflow:hidden; width:100%; }
 .card-head{ padding:10px 14px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; justify-content:space-between; }
