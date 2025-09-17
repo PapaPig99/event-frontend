@@ -69,7 +69,7 @@ const seatmap = ref(
       </div>
     </section>
 
-    <!-- Stepper (ภาพแบบที่ 2) -->
+    <!-- Stepper(ภาพแบบที่ 2) -->
     <section class="stepper2">
       <div class="track"></div>
       <div class="steps">
@@ -91,7 +91,7 @@ const seatmap = ref(
     <h2 class="section-title">ดูผังการแสดง</h2>
 
     <div class="seatmap-wrap">
-      <!-- TODO: เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
+      <!-- TODO:เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
       <img :src="seatmap" alt="Seat map" class="seatmap-img" />
     </div>
 
