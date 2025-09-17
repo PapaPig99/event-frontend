@@ -35,10 +35,10 @@ const router = createRouter({
         { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
         { path: 'allevents', name: 'admin-all-events',   component: () => import('@/pages/admin/AllEvent.vue') },
         { path: 'create',    name: 'admin-create-event', component: () => import('@/pages/admin/CreateEvent.vue') },
-        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/edit-event.vue'), props: true },
+        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/EditEvent.vue'), props: true },
+        { path: 'events/:id/detail',   name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue')},
       ],
     },
-
     // 404
     { path: '/:pathMatch(.*)*',   name: 'not-found',          component: () => import('@/pages/NotFound.vue') },
   ],
