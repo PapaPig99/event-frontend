@@ -186,26 +186,7 @@ onMounted(loadEvent)
 
 <template>
   <div class="shell">
-    <!-- Topbar -->
-    <header class="topbar">
-      <div class="brand"><span class="logo">JoinUp</span></div>
-      <div class="top-actions">
-        <input class="search" placeholder="Search…" />
-        <div class="user"><i class="i-user" /> Username</div>
-        <button class="btn small ghost">Signout</button>
-      </div>
-    </header>
-
     <div class="body">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-title">Navigation</div>
-        <nav class="menu">
-          <a class="menu-item">All Events</a>
-          <a class="menu-item active">Edit Event</a>
-        </nav>
-      </aside>
-
       <main class="content">
         <h1 class="page-big">Edit Event</h1>
 
