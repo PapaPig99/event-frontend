@@ -1,12 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-
-    // ===== Zone Public =====
-     {
+    // ====== Zone User ======
+    {
       path: '/',
       component: () => import('@/layouts/UserLayout.vue'),
       children: [
@@ -19,23 +17,22 @@ const router = createRouter({
         { path: 'help',        name: 'help',        component: () => import('@/pages/Help.vue') },
       ],
     },
-    
-    // ===== Zone Admin =====
+    // ====== Zone Admin ======
     { path: '/admin/login', name: 'admin-login', component: () => import('@/pages/admin/Login.vue') },
+
     {
       path: '/admin',
       component: () => import('@/layouts/AdminLayout.vue'),
       children: [
-        { path: '', redirect: '/admin/overview' },
-        { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
-        { path: 'allevents', name: 'admin-all-events',   component: () => import('@/pages/admin/AllEvent.vue') },
-        { path: 'create',    name: 'admin-create-event', component: () => import('@/pages/admin/CreateEvent.vue') },
-        { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/edit-event.vue'), props: true },
+        // { path: '', redirect: '/admin/overview' },
+        // { path: 'overview',      name: 'admin-overview',      component: () => import('@/pages/admin/Overview.vue') },
+        { path: 'events/all',    name: 'admin-events-all',    component: () => import('@/pages/admin/AllEvent.vue') },
+        { path: 'events/create', name: 'admin-events-create', component: () => import('@/pages/admin/CreateEvent.vue') }
       ],
     },
 
-    // 404
-    { path: '/:pathMatch(.*)*',   name: 'not-found',          component: () => import('@/pages/NotFound.vue') },
+    // กันหลงทาง
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/pages/NotFound.vue') },
   ],
 })
 
