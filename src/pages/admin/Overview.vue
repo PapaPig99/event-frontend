@@ -1,10 +1,9 @@
 <!-- src/pages/admin/Overview.vue -->
 <template>
   <div :style="page">
-
     <!-- Top row -->
     <div :style="topbar">
-      <h2 :style="h2">Overview</h2>
+      <h2 class="title" :style="h2">Overview</h2>
 
       <div :style="actions">
         <!-- Search -->
@@ -14,7 +13,7 @@
         </div>
 
         <!-- Toggle -->
-        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive?'On':'Off')">
+        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
           <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
             <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
           </div>
@@ -77,6 +76,7 @@
 
 <script setup>
 import { ref, computed } from "vue";
+defineEmits(["add-event"]);
 
 /* ===== Demo data ===== */
 const rows = ref([
@@ -122,7 +122,7 @@ const radius   = "12px";
 const page = { background: color.page, minHeight: "100%", padding: "16px 18px 28px" };
 
 const topbar = { display:"flex", justifyContent:"space-between", alignItems:"center", maxWidth:"1040px", margin:"0 auto 10px" };
-const h2 = { margin:0, fontWeight:800, letterSpacing:".2px", color:"#3a3a3a" };
+const h2 = { margin:0, letterSpacing:".2px", color:"#3a3a3a" }; // ขนาด/น้ำหนักดูที่ .title ใน <style>
 
 const actions = { display:"flex", alignItems:"center", gap:"12px" };
 
@@ -152,21 +152,15 @@ const addBtn = {
   border: "none",
   cursor: "pointer",
   userSelect: "none",
-  borderRadius: "14px",           
-  background: "#5563FF",          
+  borderRadius: "14px",
+  background: "#5563FF",
   color: "#fff",
   fontWeight: 700,
   fontSize: "14px",
-  boxShadow: "0 8px 16px rgba(85,99,255,.25)",  
+  boxShadow: "0 8px 16px rgba(85,99,255,.25)",
   transition: "filter .15s ease, transform .06s ease, box-shadow .2s ease",
 };
-const addBtnPlus = {
-  width: "20px",
-  lineHeight: "20px",
-  textAlign: "center",
-  fontSize: "20px",
-  fontWeight: 800,
-};
+const addBtnPlus = { width: "20px", lineHeight: "20px", textAlign: "center", fontSize: "20px", fontWeight: 800 };
 
 /* Surface */
 const surface = { background: color.card, borderRadius:"16px", boxShadow: shadowMd,
@@ -196,3 +190,10 @@ const num   = { textAlign:"right", fontWeight:600 };
 const eventMain = { fontWeight:800, color: color.text };
 const eventSub  = { marginTop:"2px", fontSize:"12px", color: color.muted };
 </script>
+
+<style scoped>
+.title{
+  font-weight:700;
+  font-size:50px;
+}
+</style>
