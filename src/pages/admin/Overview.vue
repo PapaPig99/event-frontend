@@ -13,7 +13,7 @@
         </div>
 
         <!-- Toggle -->
-        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive?'On':'Off')">
+        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
           <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
             <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
           </div>
@@ -76,7 +76,7 @@
 
 <script setup>
 import { ref, computed } from "vue";
-defineEmits(['add-event'])
+defineEmits(["add-event"]);
 
 /* ===== Demo data ===== */
 const rows = ref([
