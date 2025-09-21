@@ -1,4 +1,77 @@
+<!-- src/pages/admin/Overview.vue -->
 <template>
+  <div :style="page">
+    <!-- Top row -->
+    <div :style="topbar">
+      <h2 class="title" :style="h2">Overview</h2>
+
+      <div :style="actions">
+        <!-- Search -->
+        <div :style="searchBox">
+          <i class="fa fa-search" :style="iconMuted"></i>
+          <input v-model="q" type="text" placeholder="Search" :style="searchInput" />
+        </div>
+
+        <!-- Toggle -->
+        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
+          <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
+            <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
+          </div>
+        </div>
+
+        <!-- Add Events -->
+        <button :style="addBtn" @click="$emit('add-event')">
+          <span :style="addBtnPlus">+</span>
+          <span>เพิ่มอีเวนต์</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main surface -->
+    <div :style="surface">
+      <!-- KPI Row -->
+      <div :style="kpiRow">
+        <div :style="[kpiBase, kpiGreen]">
+          <div :style="kpiHead">
+            <span>Active Events</span>
+            <span :style="kpiDot"></span>
+          </div>
+          <div :style="kpiVal">{{ activeCount }}</div>
+        </div>
+
+        <div :style="[kpiBase, kpiBlue]">
+          <div :style="kpiHead">
+            <span>Tickets Sold</span>
+            <i class="fa fa-ticket-alt" :style="iconMuted"></i>
+          </div>
+          <div :style="kpiVal">{{ totalSold.toLocaleString() }}</div>
+        </div>
+      </div>
+
+      <!-- Sales Progress -->
+      <div :style="salesCard">
+        <div :style="salesTitle">Sales Progress</div>
+
+        <div>
+          <div :style="thead">
+            <div>Event</div>
+            <div :style="num">Capacity</div>
+            <div :style="num">Sold</div>
+          </div>
+
+          <div v-for="(r,i) in filteredRows" :key="i" :style="trow">
+            <div>
+              <div :style="eventMain">{{ truncate(r.name, 18) }}</div>
+              <div :style="eventSub">{{ r.sub }}</div>
+            </div>
+            <div :style="num">{{ format(r.capacity) }}</div>
+            <div :style="num">{{ format(r.sold) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
   <section class="edit-events">
     <header class="toolbar">
       <div class="title">
@@ -8,6 +81,128 @@
   </section>
 </template>
 
+<script setup>
+import { ref, computed } from "vue";
+defineEmits(["add-event"]);
+
+/* ===== Demo data ===== */
+const rows = ref([
+  { name: "MARIAH CAREY",  sub: "Concert",  capacity: 2680, sold: 2110, active: true  },
+  { name: "ONE LUMPINEE",  sub: "Sport",    capacity: 1400, sold:  680, active: true  },
+  { name: "Old Fair 2024", sub: "Festival", capacity:  900, sold:    0, active: false },
+]);
+
+const q = ref("");
+const onlyActive = ref(false);
+
+const filteredRows = computed(() =>
+  rows.value
+    .filter(r => (!onlyActive.value || r.active))
+    .filter(r => (q.value ? (r.name + " " + r.sub).toLowerCase().includes(q.value.toLowerCase()) : true))
+);
+
+const activeCount = computed(() => rows.value.filter(r => r.active).length);
+const totalSold   = computed(() => rows.value.reduce((a, b) => a + b.sold, 0));
+
+const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const format   = n => n.toLocaleString();
+
+/* ================= TOKENS ================= */
+const color = {
+  page:   "#f3f3f4",
+  card:   "#ffffff",
+  text:   "#222",
+  title:  "#444",
+  muted:  "#8a8a8a",
+  border: "#E6E6E6",
+  kpiGreen: "#E0F3E8",
+  kpiBlue:  "#E8EEFF",
+  kpiDot:   "#34C38F",
+  blue:     "#5563FF",
+  blueTrack:"#CFD5FF",
+};
+const shadowSm = "0 4px 12px rgba(0,0,0,.08)";
+const shadowMd = "0 10px 24px rgba(0,0,0,.10)";
+const radius   = "12px";
+
+/* ================= STYLES ================= */
+const page = { background: color.page, minHeight: "100%", padding: "16px 18px 28px" };
+
+const topbar = { display:"flex", justifyContent:"space-between", alignItems:"center", maxWidth:"1040px", margin:"0 auto 10px" };
+const h2 = { margin:0, letterSpacing:".2px", color:"#3a3a3a" }; // ขนาด/น้ำหนักดูที่ .title ใน <style>
+
+const actions = { display:"flex", alignItems:"center", gap:"12px" };
+
+/* Search */
+const searchBox = { display:"flex", alignItems:"center", gap:"8px", height:"40px", padding:"0 12px",
+  background:"#fff", borderRadius:"12px", boxShadow: shadowMd };
+const iconMuted = { color:"#9aa3b2" };
+const searchInput = { width:"420px", maxWidth:"52vw", border:"none", outline:"none",
+  background:"transparent", color:"#333", fontSize:"14px" };
+
+/* Toggle */
+const toggleWrap = { cursor:"pointer" };
+const toggleTrack = { width:"36px", height:"20px", background:"#e7e9f3", borderRadius:"999px", position:"relative", transition:".18s" };
+const toggleTrackOn = { background: color.blueTrack };
+const toggleDot = { position:"absolute", top:"2px", left:"2px", width:"16px", height:"16px",
+  borderRadius:"50%", background:"#fff", boxShadow:"0 2px 6px rgba(0,0,0,.18)", transition:".18s" };
+const toggleDotOn = { transform:"translateX(16px)", background: color.blue };
+
+/* Add button */
+const addBtn = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "10px",
+  height: "44px",
+  padding: "0 18px",
+  minWidth: "140px",
+  border: "none",
+  cursor: "pointer",
+  userSelect: "none",
+  borderRadius: "14px",
+  background: "#5563FF",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: "14px",
+  boxShadow: "0 8px 16px rgba(85,99,255,.25)",
+  transition: "filter .15s ease, transform .06s ease, box-shadow .2s ease",
+};
+const addBtnPlus = { width: "20px", lineHeight: "20px", textAlign: "center", fontSize: "20px", fontWeight: 800 };
+
+/* Surface */
+const surface = { background: color.card, borderRadius:"16px", boxShadow: shadowMd,
+  padding:"26px 26px 34px", maxWidth:"1040px", margin:"0 auto" };
+
+/* KPI */
+const kpiRow = { display:"flex", gap:"22px", marginBottom:"24px", flexWrap:"wrap" };
+const kpiBase = { width:"240px", borderRadius: radius, padding:"14px 18px", boxShadow: shadowSm };
+const kpiGreen = { background: color.kpiGreen };
+const kpiBlue  = { background: color.kpiBlue  };
+const kpiHead  = { display:"flex", alignItems:"center", gap:"10px", fontWeight:600, color:"#505a63" };
+const kpiDot   = { width:"14px", height:"14px", borderRadius:"50%", background: color.kpiDot };
+const kpiVal   = { marginTop:"6px", fontSize:"24px", fontWeight:900, color: color.text };
+
+/* Sales card */
+const salesCard  = { width:"360px", background:"#fff", borderRadius: radius, border:`1px solid ${color.border}`,
+  boxShadow:"0 4px 10px rgba(0,0,0,.06)", padding:"16px 18px" };
+const salesTitle = { fontWeight:800, fontSize:"20px", color: color.title, marginBottom:"12px" };
+
+/* Table */
+const grid = "1fr 110px 90px";
+const thead = { display:"grid", gridTemplateColumns: grid, gap:"8px", alignItems:"center",
+  color:"#888", fontWeight:600, fontSize:"13px", padding:"6px 0", borderBottom:"1px solid #eee" };
+const trow  = { display:"grid", gridTemplateColumns: grid, gap:"8px", alignItems:"center",
+  padding:"10px 0", borderBottom:"1px solid #f5f5f5" };
+const num   = { textAlign:"right", fontWeight:600 };
+const eventMain = { fontWeight:800, color: color.text };
+const eventSub  = { marginTop:"2px", fontSize:"12px", color: color.muted };
+</script>
+
+<style scoped>
+.title{
+  font-weight:700;
+  font-size:50px;
+}
 <style>
 .edit-events {
   padding: 20px;
