@@ -1,8 +1,9 @@
 <template>
   <div class="event-detail-page">
     <!-- Title -->
+      <header class="toolbar">
     <div class="title">Event Detail</div>
-
+</header>
     <!-- Event Banner -->
     <div class="banner">
       <img :src="event.banner" alt="Event Banner" />
@@ -44,13 +45,6 @@
       <p>{{ event.description }}</p>
     </div>
   </div>
-  <section class="detail-events">
-    <header class="toolbar">
-      <div class="title">
-        Event details
-      </div>
-    </header>
-  </section>
 </template>
 
 <script setup>
@@ -90,8 +84,8 @@ function bookTicket() {
 
 <style scoped>
 .event-detail-page {
-  max-width: 900px;
-  margin: auto;
+  /* max-width: 900px; */
+  /* margin: auto; */
   padding: 20px;
 }
 
@@ -171,7 +165,7 @@ function bookTicket() {
   font-size: 22px;
   margin-bottom: 15px;
 }
-<style>
+
 .detail-events {
   padding: 20px;
 }

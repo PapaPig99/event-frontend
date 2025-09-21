@@ -1,31 +1,33 @@
 <!-- src/pages/admin/Overview.vue -->
 <template>
-  <div :style="page">
-    <!-- Top row -->
-    <div :style="topbar">
-      <h2 class="title" :style="h2">Overview</h2>
+  <section class="overview-events">
+    <!-- Top row --> 
+    <!-- <div :style="topbar"> -->
+            <header class="toolbar">
 
-      <div :style="actions">
+      <h2 class="title" :style="h2">Overview</h2>
+            </header>
+     <!--  <div :style="actions"> -->
         <!-- Search -->
-        <div :style="searchBox">
+        <!-- <div :style="searchBox">
           <i class="fa fa-search" :style="iconMuted"></i>
           <input v-model="q" type="text" placeholder="Search" :style="searchInput" />
-        </div>
+        </div> -->
 
         <!-- Toggle -->
-        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
+        <!-- <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
           <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
             <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
           </div>
-        </div>
+        </div> -->
 
         <!-- Add Events -->
-        <button :style="addBtn" @click="$emit('add-event')">
+        <!-- <button :style="addBtn" @click="$emit('add-event')">
           <span :style="addBtnPlus">+</span>
           <span>เพิ่มอีเวนต์</span>
         </button>
       </div>
-    </div>
+    </div> -->
 
     <!-- Main surface -->
     <div :style="surface">
@@ -71,14 +73,8 @@
       </div>
     </div>
 
-  </div>
-  <section class="edit-events">
-    <header class="toolbar">
-      <div class="title">
-        Overview
-      </div>
-    </header>
-  </section>
+    </section>
+
 </template>
 
 <script setup>
@@ -203,8 +199,8 @@ const eventSub  = { marginTop:"2px", fontSize:"12px", color: color.muted };
   font-weight:700;
   font-size:50px;
 }
-<style>
-.edit-events {
+
+.overview-events {
   padding: 20px;
 }
 .title {
