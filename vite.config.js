@@ -5,13 +5,17 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   plugins: [vue()],
   define: {
-    __IMAGE_BASE__: JSON.stringify("http://localhost:3137/images/"),
+    __IMAGE_BASE__: JSON.stringify('/images/'),
   },
   server: {
     proxy: {
-      '/api': {                 // ทุกคำขอที่ขึ้นต้นด้วย /api
-        target: 'http://localhost:3137', // URL backend Spring
-        changeOrigin: true
+      '/api': {
+        target: 'http://localhost:3137',
+        changeOrigin: true,
+      },
+      '/images': {
+        target: 'http://localhost:3137',
+        changeOrigin: true,
       }
     }
   },
@@ -19,5 +23,3 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
   }
 })
-
-

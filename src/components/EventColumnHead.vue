@@ -46,7 +46,8 @@ watch(() => props.modelValue, v => (localValue.value = v))
 }
 .title { 
   letter-spacing: .2px;
-  font-size: 16px;
+  font-size: 18px;
+  color: #fff;
  }
 
 /* แถบค้นหา */
@@ -57,6 +58,8 @@ watch(() => props.modelValue, v => (localValue.value = v))
   border: 1px solid #e5e5e5;
   border-top: none;
   height: 36px;
+    font-size: 14px;
+
 }
 .head-search input {
   all: unset;
