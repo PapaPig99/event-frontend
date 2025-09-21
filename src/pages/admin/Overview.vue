@@ -1,31 +1,33 @@
 <!-- src/pages/admin/Overview.vue -->
 <template>
-  <div :style="page">
-    <!-- Top row -->
-    <div :style="topbar">
-      <h2 class="title" :style="h2">Overview</h2>
+  <section class="overview-events">
+    <!-- Top row --> 
+    <!-- <div :style="topbar"> -->
+            <header class="toolbar">
 
-      <div :style="actions">
+      <h2 class="title" :style="h2">Overview</h2>
+            </header>
+     <!--  <div :style="actions"> -->
         <!-- Search -->
-        <div :style="searchBox">
+        <!-- <div :style="searchBox">
           <i class="fa fa-search" :style="iconMuted"></i>
           <input v-model="q" type="text" placeholder="Search" :style="searchInput" />
-        </div>
+        </div> -->
 
         <!-- Toggle -->
-        <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
+        <!-- <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
           <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
             <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
           </div>
-        </div>
+        </div> -->
 
         <!-- Add Events -->
-        <button :style="addBtn" @click="$emit('add-event')">
+        <!-- <button :style="addBtn" @click="$emit('add-event')">
           <span :style="addBtnPlus">+</span>
           <span>เพิ่มอีเวนต์</span>
         </button>
       </div>
-    </div>
+    </div> -->
 
     <!-- Main surface -->
     <div :style="surface">
@@ -71,7 +73,8 @@
       </div>
     </div>
 
-  </div>
+    </section>
+
 </template>
 
 <script setup>
@@ -195,5 +198,21 @@ const eventSub  = { marginTop:"2px", fontSize:"12px", color: color.muted };
 .title{
   font-weight:700;
   font-size:50px;
+}
+
+.overview-events {
+  padding: 20px;
+}
+.title {
+  color: #5f6063;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
 }
 </style>

@@ -1,8 +1,9 @@
 <template>
   <div class="event-detail-page">
     <!-- Title -->
+      <header class="toolbar">
     <div class="title">Event Detail</div>
-
+</header>
     <!-- Event Banner -->
     <div class="banner">
       <img :src="event.banner" alt="Event Banner" />
@@ -83,8 +84,8 @@ function bookTicket() {
 
 <style scoped>
 .event-detail-page {
-  max-width: 900px;
-  margin: auto;
+  /* max-width: 900px; */
+  /* margin: auto; */
   padding: 20px;
 }
 
@@ -163,5 +164,21 @@ function bookTicket() {
 .description h3 {
   font-size: 22px;
   margin-bottom: 15px;
+}
+
+.detail-events {
+  padding: 20px;
+}
+.title {
+  color: #5f6063;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
 }
 </style>
