@@ -1,195 +1,39 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { ref, reactive, onMounted, watch ,computed, onUnmounted} from 'vue'
+import { useRoute } from 'vue-router'
 
-// หุบ/ขยาย
+/* ---------- หุบ/ขยาย ---------- */
 const open = reactive({ event: true, description: true, sessions: true, zones: true })
 const toggle = key => (open[key] = !open[key])
 
-/* ---------- form  ---------- */
-const form = reactive({
-  // core fields
-  name: '',
-  description: '',
-  category: '',
-  venue: '',
-  startDate: '',       // YYYY-MM-DD
-  endDate: '',         // YYYY-MM-DD
-  status: false,       // true=open
-  regOpen: '',         // YYYY-MM-DDTHH:mm
-  regClose: '',        // YYYY-MM-DDTHH:mm
-  saleNoEnd: false,
-  gateOpen: '',        // string|null
-
-  // รูป (เก็บทั้งไฟล์ที่ผู้ใช้เลือก + preview/ชื่อไฟล์)
-  poster: null,        // File|null
-  detailImage: null,   // File|null
-  seatmapImage: null,  // File|null
-  posterUrl: null,     // string|null (preview หรือชื่อไฟล์เดิม)
-  detailUrl: null,
-  seatmapUrl: null,
-
-  // sessions/rounds
-  rounds: [
-    { id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null }
-  ],
-
-  // zones
-  zones: [{ id: null, name: '', capacity: 0, price: 0 }],
-})
-
-/* ---------- upload handlers ---------- */
-function onPosterChange(e) {
-  const f = e.target.files?.[0] || null
-  form.poster = f
-  form.posterUrl = f ? URL.createObjectURL(f) : null
-  console.log('preview =', form.posterUrl)
+/* ---------- แปลงวันที่ พ.ศ. -> ค.ศ. ---------- */
+function thaiDateToISODate(thai) {
+  if (!thai) return ''
+  const [y, m, d] = thai.split('-')
+  const year = Number(y) > 2400 ? Number(y) - 543 : Number(y)
+  return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
-function onDetailChange(e) {
-  const f = e.target.files?.[0] || null
-  form.detailImage = f
-  form.detailUrl = f ? URL.createObjectURL(f) : null
-}
-function onSeatmapChange(e) {
-  const f = e.target.files?.[0] || null
-  form.seatmapImage = f
-  form.seatmapUrl = f ? URL.createObjectURL(f) : null
-}
-function srcFor(u) {
-  if (!u) return ''
-  // ถ้าเป็น blob: / http(s): / หรือ path เองก็ใช้ได้เลย
-  if (u.startsWith('blob:') || u.startsWith('http') || u.startsWith('/')) return u
-
-  return  u
-}
-/* ---------- helpers เวลา/วันที่ ---------- */
-const withSec = t => (t ? (t.length === 5 ? `${t}:00` : t) : null)
-const withSecDT = dt => (dt ? (dt.length === 16 ? `${dt}:00` : dt) : null)
-
-/* ---------- map form -> DTO ---------- */
-function buildDto() {
-  return {
-    title: form.name,
-    description: form.description,
-    category: form.category,
-    location: form.venue,
-    startDate: form.startDate || null,
-    endDate: form.endDate || null,
-    status: form.status ? 'OPEN' : 'CLOSED',
-    saleStartAt: withSecDT(form.regOpen),
-    saleEndAt: form.saleNoEnd ? null : withSecDT(form.regClose),
-    saleUntilSoldout: !!form.saleNoEnd,
-    doorOpenTime: withSec(form.gateOpen),
-
-    // ถ้าไม่ได้เลือกไฟล์ใหม่ → ส่งชื่อไฟล์/preview เดิม 
-    posterImageUrl: form.poster ? null : form.posterUrl,
-    detailImageUrl: form.detailImage ? null : form.detailUrl,
-    seatmapImageUrl: form.seatmapImage ? null : form.seatmapUrl,
-
-    createdByUserId: 1,
-
-    sessions: form.rounds.map(r => ({
-      id: r.id ?? null,
-      name: r.roundName,
-      startTime: withSec(r.startTime),
-      endTime: withSec(r.endTime),
-      status: 'OPEN',
-      maxParticipants: r.maxAttendees ?? null,
-      price: r.price ?? null
-    })),
-
-    zones: form.zones.map(z => ({
-      id: z.id ?? null,
-      name: z.name,
-      capacity: Number(z.capacity || 0),
-      price: Number(z.price || 0)
-    }))
-  }
+function thaiDateTimeToISOLocal(thaiDT) {
+  if (!thaiDT) return ''
+  const [datePart, timeRaw] = thaiDT.split('T')
+  const dateISO = thaiDateToISODate(datePart)
+  const time = (timeRaw || '').slice(0, 5) // HH:mm
+  return `${dateISO}T${time}`
 }
 
-/* ---------- submit: POST /api/events (multipart/form-data) ---------- */
-async function saveCreate() {
-  //ดูค่าฟอร์มก่อนสร้าง DTO
-  console.log('FORM before buildDto =', JSON.parse(JSON.stringify(form)));
+/* ---------- รองรับข้อมูลที่ไม่มี(/images/ prefix)  ---------- */
+function resolveImage(filename) {
+  if (!filename) return ""
+  if (/^https?:\/\//i.test(filename)) return filename
 
-  //สร้าง DTO จากฟอร์ม
-  const dto = buildDto();
-  console.log('DTO =', dto);
+  // ถ้า backend ส่ง "/images/xxx.png" อยู่แล้ว → ใช้เลย
+  if (filename.startsWith("/images/")) return filename
 
-  //ประกอบ FormData ให้ตรงกับ backend (@RequestPart)
-  const fd = new FormData();
-  fd.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }));
-  if (form.poster)      fd.append('poster',  form.poster);
-  if (form.detailImage) fd.append('detail',  form.detailImage);
-  if (form.seatmapImage)fd.append('seatmap', form.seatmapImage);
-
-  //Log ดูว่าใน FormData มีอะไรบ้าง
-  for (const [k, v] of fd.entries()) {
-    console.log('FormData field:', k, v);
-  }
-
-  try {
-    const res = await fetch('/api/events', { method: 'POST', body: fd });
-    if (!res.ok) {
-      let msg = `Create failed: ${res.status}`;
-      try {
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const j = await res.json();
-          msg += ` — ${j.message || JSON.stringify(j)}`;
-        } else {
-          msg += ` — ${await res.text()}`;
-        }
-      } catch {}
-      throw new Error(msg);
-    }
-
-    const loc = res.headers.get('Location');
-    const id = loc ? loc.split('/').pop() : null;
-    alert(`สร้างสำเร็จ! Event ID = ${id}`);
-  } catch (err) {
-    console.error(err);
-    alert(err.message || 'เกิดข้อผิดพลาดระหว่างบันทึก');
-  }
+  // ถ้าเป็นชื่อไฟล์เปล่า → เติม /images/ ให้
+  return `/images/${filename.replace(/^\/+/, "")}`
 }
 
-
-
-/* ---------- rounds & zones ---------- */
-function onToggleMultiRounds(v) {
-  if (v) {
-    if (form.rounds.length === 0) form.rounds.push({ id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null })
-    if (form.rounds.length === 1) form.rounds.push({ id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null })
-  } else {
-    form.rounds = [form.rounds[0] ?? { id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null }]
-  }
-}
-function addRound() {
-  form.rounds.push({ id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null })
-}
-function removeRound(i) {
-  if (form.rounds.length <= 1) return
-  form.rounds.splice(i, 1)
-}
-
-const multiZones = ref(false)
-function onToggleMultiZones(v) {
-  if (v) {
-    if (form.zones.length === 0) form.zones = [{ id: null, name: '', capacity: 0, price: 0 }]
-  } else {
-    form.zones = []
-  }
-}
-function addZone() {
-  form.zones.push({ id: null, name: '', capacity: 0, price: 0 })
-}
-function removeZone(i) {
-  form.zones.splice(i, 1)
-}
-
-/* ---------- misc ---------- */
-function onCancel() { history.back() }
-
-/* ---ลบรูป ---- */
+/*------- ลบรูป --------- */
 function clearPoster() {
   form.posterUrl = null
 }
@@ -199,15 +43,333 @@ function clearDetail() {
 function clearSeat() {
   form.seatmapUrl = null
 }
+/*------- เปลี่ยนรูป --------- */
+const posterObjUrl = ref(null)
+const detailObjUrl = ref(null)
+const seatmapObjUrl = ref(null)
+
+/*---------------- Poster ----------------*/
+function onPosterChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.poster = f
+  if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
+  posterObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.posterUrl = posterObjUrl.value
+}
+const posterSrc = computed(() =>
+  form.poster ? posterObjUrl.value : resolveImage(form.posterUrl)
+)
+
+/*---------------- Detail ----------------*/
+function onDetailChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.detailImage = f  
+  if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
+  detailObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.detailUrl = detailObjUrl.value
+}
+const detailSrc = computed(() =>
+  form.detailImage ? detailObjUrl.value : resolveImage(form.detailUrl)
+)
+
+/*---------------- Seatmap ----------------*/
+function onSeatmapChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.seatmapImage = f   
+  if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
+  seatmapObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.seatmapUrl = seatmapObjUrl.value
+}
+const seatmapSrc = computed(() =>
+  form.seatmapImage ? seatmapObjUrl.value : resolveImage(form.seatmapUrl)
+)
+
+/*---------------- Cleanup ----------------*/
+onUnmounted(() => {
+  if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
+  if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
+  if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
+})
+
+/* ---------- form ---------- */
+const form = reactive({
+  // รูป (URL เดิม/พรีวิว)
+  posterUrl: null,
+  detailUrl: null,
+  seatmapUrl: null,
+
+  // core fields (ตรงกับ template เดิมของพ้ม)
+  name: '',
+  category: '',
+  organizer: '',
+  type: 'offline',
+  status: false,            // true = OPEN
+  regOpen: '',              // 'YYYY-MM-DDTHH:mm'
+  regClose: '',             // 'YYYY-MM-DDTHH:mm'
+  saleNoEnd: false,
+  startDate: '',            // 'YYYY-MM-DD'
+  endDate: '',              // 'YYYY-MM-DD'
+  venue: '',
+  address: '',
+  gateOpen: '',             // 'HH:mm' หรือข้อความอิสระ
+  ageLimit: '',
+  description: '',
+
+  // ไฟล์ใหม่ (ถ้ามีผู้ใช้อัปโหลดในหน้า Edit)
+  poster: null,             // File|null
+  detailImage: null,        // File|null
+  seatmapImage: null,       // File|null
+
+  // sessions/rounds
+  rounds: [],
+
+  // zones
+  zones: [],
+})
+const route = useRoute()
+const multiRounds = ref(false)
+const multiZones = ref(false)
+const loading = ref(false)
+const saving = ref(false)
+
+const emptyRound = () => ({
+  roundName: '',
+  startTime: '',
+  endTime: '',
+  maxAttendees: null,
+  price: null,
+})
+
+// เติมวินาทีให้ 'YYYY-MM-DDTHH:mm' → '...:ss'
+function withSecDT(dt) {
+  if (!dt) return null
+  return dt.length === 16 ? dt + ':00' : dt
+}
+
+// เติมวินาทีให้ 'HH:mm' → 'HH:mm:00'; ถ้าไม่ใช่เวลา ให้คงข้อความเดิม
+function withSec(t) {
+  if (!t) return null
+  return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t
+}
+
+/* ---------- load ---------- */
+onMounted(async () => {
+  try {
+    loading.value = true
+    const id = route.params.id || 1
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+
+    // event
+    form.name = data.title ?? ''
+    form.category = data.category ?? ''
+    form.venue = data.location ?? ''
+    form.description = data.description ?? ''
+    form.startDate = thaiDateToISODate(data.startDate)
+    form.endDate = thaiDateToISODate(data.endDate)
+    form.status = (data.status === 'OPEN')
+    form.regOpen = thaiDateTimeToISOLocal(data.saleStartAt)
+    form.saleNoEnd = !!data.saleUntilSoldout
+    form.regClose = form.saleNoEnd ? '' : thaiDateTimeToISOLocal(data.saleEndAt)
+   form.gateOpen = data.doorOpenTime || ''
+
+    // รูปจาก API
+    form.posterUrl   = data.posterImageUrl || null
+    form.detailUrl   = data.detailImageUrl || null
+    form.seatmapUrl  = data.seatmapImageUrl || null
+
+    // sessions -> rounds
+    const sessions = Array.isArray(data.sessions) ? data.sessions : []
+    form.rounds = sessions.length
+      ? sessions.map(s => ({
+          id: s.id ?? null,
+          roundName: s.name ?? '',
+          startTime: (s.startTime || '').slice(0, 5),      // 'HH:mm:ss' -> 'HH:mm'
+          endTime: s.endTime ? s.endTime.slice(0, 5) : '',
+          maxAttendees: s.maxParticipants ?? null,
+          price: s.price ?? null
+        }))
+      : [emptyRound()]
+    multiRounds.value = form.rounds.length > 1
+
+    // zones
+    const zones = Array.isArray(data.zones) ? data.zones : []
+    form.zones = zones.length
+      ? zones.map(z => ({
+          id: z.id ?? null,
+          name: z.name ?? '',
+          capacity: z.capacity ?? 0,
+          price: z.price ?? 0
+        }))
+      : []
+    multiZones.value = form.zones.length > 0
+  } catch (e) {
+    console.error(e)
+    alert('โหลดข้อมูลไม่สำเร็จ')
+  } finally {
+    loading.value = false
+  }
+})
+/* ---------- บังคับให้กรอก ---------- */
+
+function validate() {
+  const errs = []
+
+  if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
+  if (!form.category)      errs.push('กรุณาเลือกหมวดหมู่')
+  if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
+  if (!form.startDate)     errs.push('กรุณากรอกวันที่เริ่ม')
+  if (!form.endDate)       errs.push('กรุณากรอกวันที่สิ้นสุด')
+
+  // 1) sale_start_at NOT NULL
+  if (!form.regOpen) errs.push('กรุณากรอกวัน-เวลาเปิดขาย (regOpen)')
+
+  // 2) poster_image_url NOT NULL (ถ้าไม่อัปไฟล์ใหม่ ต้องมี URL เดิม)
+  if (!form.poster && !form.posterUrl) errs.push('กรุณาใส่รูปโปสเตอร์')
+
+  // 3) sessions.start_time NOT NULL
+  const validSessions = (form.rounds || []).filter(r => !!r.startTime)
+  if (validSessions.length === 0) errs.push('กรุณากรอกอย่างน้อย 1 รอบ พร้อมเวลาเริ่ม (HH:mm)')
+
+  // 4) zones.name NOT NULL + unique ต่อ event
+  const filteredZones = (form.zones || []).filter(z => !!z.name?.trim())
+  const dupNames = new Set()
+  const dup = filteredZones.some(z => {
+    const key = z.name.trim()
+    if (dupNames.has(key)) return true
+    dupNames.add(key)
+    return false
+  })
+  if (dup) errs.push('โซนห้ามชื่อซ้ำกัน')
+
+  return errs
+}
+
+/* ---------- rounds ops ---------- */
+function onToggleMultiRounds(v) {
+  const val = typeof v === 'object' && v?.value !== undefined ? v.value : !!v
+  if (val) {
+    if (form.rounds.length === 1) form.rounds.push(emptyRound())
+  } else {
+    form.rounds = [form.rounds[0] ?? emptyRound()]
+  }
+}
+// ป้องกันกรณีลืมส่ง .value ใน template
+watch(multiRounds, (val) => onToggleMultiRounds(val))
+
+function addRound() {
+  form.rounds.push(emptyRound())
+  multiRounds.value = form.rounds.length > 1
+}
+function removeRound(i) {
+  if (form.rounds.length <= 1) return
+  form.rounds.splice(i, 1)
+  multiRounds.value = form.rounds.length > 1
+}
+
+/* ---------- zones ops ---------- */
+function addZone() {
+  form.zones.push({ name: '', capacity: 0, price: 0 })
+  multiZones.value = form.zones.length > 0
+}
+function removeZone(i) {
+  form.zones.splice(i, 1)
+  multiZones.value = form.zones.length > 0
+}
+
+/* ---------- mapping form -> DTO (สำหรับ @RequestPart("data")) ---------- */
+function buildDto() {
+  return {
+    title: form.name,
+    description: form.description || '',
+    category: form.category,
+    location: form.venue,
+    startDate: form.startDate || null,
+    endDate: form.endDate || null,
+    status: form.status ? 'OPEN' : 'CLOSED',
+
+    saleStartAt: withSecDT(form.regOpen),                                  // required
+    saleEndAt: form.saleNoEnd ? null : (form.regClose ? withSecDT(form.regClose) : null),
+    saleUntilSoldout: !!form.saleNoEnd,
+    doorOpenTime: form.gateOpen || null,
+
+    // รูป: ถ้าอัปใหม่ -> ให้ backend จัดการจากไฟล์; ถ้าไม่อัป -> ส่ง URL เดิม
+    posterImageUrl: form.poster ? null : form.posterUrl,                   // required
+    detailImageUrl: form.detailImage ? null : (form.detailUrl || null),
+    seatmapImageUrl: form.seatmapImage ? null : (form.seatmapUrl || null),
+    createdByUserId:  1 ,  //1ไปก่อน ค่อยเปลี่ยน
+
+    // sessions: ส่งเฉพาะที่มี startTime
+    sessions: (form.rounds || [])
+      .filter(r => !!r.startTime)
+      .map(r => ({
+        id: r.id ?? null,
+        name: r.roundName,
+        startTime: withSec(r.startTime),
+        endTime: r.endTime ? withSec(r.endTime) : null,
+        status: 'OPEN',
+        maxParticipants: r.maxAttendees ?? null,
+        price: r.price ?? null
+      })),
+
+    // zones
+    zones: (form.zones || []).map(z => ({
+      id: z.id ?? null,
+      name: z.name,
+      capacity: Number(z.capacity || 0),
+      price: Number(z.price || 0)
+    }))
+  }
+}
+/* ---------- save (PUT) ---------- */
+async function save() {
+  try {
+    saving.value = true
+
+    // validate ก่อน
+    const errs = validate()
+    if (errs.length) {
+      alert(errs.join('\n'))
+      return
+    }
+
+    const id = route.params.id
+    const dto = buildDto()
+
+    const fd = new FormData()
+    // data ต้องเป็น application/json ให้ Spring แปลงเป็น DTO
+    fd.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }))
+    if (form.poster)      fd.append('poster',  form.poster)
+    if (form.detailImage) fd.append('detail',  form.detailImage)
+    if (form.seatmapImage)fd.append('seatmap', form.seatmapImage)
+
+    const res = await fetch(`/api/events/${id}`, { method: 'PUT', body: fd })
+    if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    console.error('Server error body:', text)   
+    throw new Error(`Save failed: ${res.status}`)
+}
+
+
+    alert('บันทึกสำเร็จ')
+  } catch (e) {
+    console.error(e)
+    alert('บันทึกไม่สำเร็จ')
+  } finally {
+    saving.value = false
+  }
+}
+
 </script>
 
 
 <template>
-  <section class="create-events">
+  <section class="edit-events">
 
     <header class="toolbar">
 
-      <div class="title">Create event</div>
+      <div class="title">Edit event</div>
     </header>
     <!-- ข้อมูลอีเวนต์ -->
     <section class="card">
@@ -217,28 +379,26 @@ function clearSeat() {
         </button>
       </header>
 
-      <div v-show="open.event" class="card-body">
+      <div v-show="open.event" class="card-body" v-if="!loading">
+        <!-- รายละเอียดหลัก -->
         <div class="grid">
-          <!-- poster -->
+          <!-- โปสเตอร์ -->
           <div class="poster">
-            <label class="uplabel">รูปโปสเตอร์ *</label>
-            <div class="upload">
+              <label class="uplabel">รูปโปสเตอร์</label>
               <button v-if="form.posterUrl" class="text-del" type="button" @click="clearPoster"
                 aria-label="ลบรูปโปสเตอร์">✕</button>
-              <!-- input file -->
+    
+
+            <div class="upload" :style="{ aspectRatio: '420 / 594' }">
               <input type="file" accept="image/png, image/jpeg" @change="onPosterChange" />
-
-              <!-- preview -->
               <div class="preview" v-if="form.posterUrl">
-                <img :src="srcFor(form.posterUrl)" alt="poster" />
+                <img v-if="posterSrc" :src="posterSrc" class="poster" />
               </div>
-
-              <!-- placeholder -->
-              <div class="placeholder" v-else>
-                อัปโหลดรูปภาพ
-              </div>
+              <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
             </div>
           </div>
+
+
 
           <!-- ฟิลด์ข้อความ -->
           <div class="fields">
@@ -257,7 +417,6 @@ function clearSeat() {
                   <option value="education">การศึกษา</option>
                   <option value="business">ธุรกิจ</option>
                   <option value="sport">กีฬา</option>
-
                 </select>
               </div>
 
@@ -295,104 +454,104 @@ function clearSeat() {
             <div class="row two">
               <div>
                 <label>วันเริ่มจัดงาน *</label>
-                <div class="with-icon cal"><input class="inp" type="date" v-model="form.startDate" /></div>
+                <div class="with-icon cal">
+                  <input class="inp" type="date" v-model="form.startDate" />
+                </div>
               </div>
               <div>
                 <label>วันสิ้นสุดงาน *</label>
-                <div class="with-icon cal"><input class="inp" type="date" v-model="form.endDate" /></div>
+                <div class="with-icon cal">
+                  <input class="inp" type="date" v-model="form.endDate" />
+                </div>
               </div>
             </div>
 
             <div class="row two">
               <div>
                 <label>ที่ตั้ง *</label>
-                <div class="with-icon loc"><input class="inp" v-model="form.venue"
-                    placeholder="เช่น Impact Arena, Hall 9" /></div>
+                <div class="with-icon loc">
+                  <input class="inp" v-model="form.venue" placeholder="เช่น Impact Arena, Hall 9" />
+                </div>
               </div>
               <div>
                 <label>เวลาประตูเปิด *</label>
-                <div class="with-icon time"><input class="inp" v-model="form.gateOpen"
-                    placeholder="เช่น 17:00 , ก่อนเริ่มงาน 1 ชม." /></div>
+                <div class="with-icon time">
+                  <input class="inp" v-model="form.gateOpen" placeholder="เช่น 17:00" />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <div v-else class="card-body">กำลังโหลดข้อมูล…</div>
     </section>
 
     <!-- รายละเอียดและรูปภาพ -->
     <section class="card">
       <header class="card-head accent">
         <h2>รายละเอียดและรูปภาพ</h2>
-        <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
+         <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
+
       </header>
-
       <div v-show="open.description" class="card-body">
+      <div class="card-body">
         <div class="stack">
-
           <div class="row">
             <label>คำอธิบาย *</label>
-            <textarea class="inp" v-model="form.description" rows="4"
-              placeholder="เล่ารายละเอียดเกี่ยวกับงาน"></textarea>
+            <textarea class="inp" rows="4" v-model="form.description" placeholder="เล่ารายละเอียดเกี่ยวกับงาน" />
           </div>
 
-
           <div class="gallery two-col">
-            <!-- รูปภาพเพิ่มเติม -->
             <div class="gallery-item">
               <label class="uplabel">รูปภาพเพิ่มเติม</label>
-               <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
+              <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
                 aria-label="ลบรูปโปสเตอร์">✕</button>
               <div class="upload small">
                 <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" />
                 <div class="preview" v-if="form.detailUrl">
-                  <img :src="srcFor(form.detailUrl)" alt="detail" />
+                  <img v-if="detailSrc" :src="detailSrc" class="detail" />
                 </div>
-                <div class="placeholder" v-else>
-                  อัปโหลดรูปภาพ
-                </div>
+                <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
               </div>
             </div>
 
-            <!-- ผังงาน/ผังที่นั่ง -->
             <div class="gallery-item">
               <label class="uplabel">ผังงาน/ผังที่นั่ง</label>
-               <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat"
+              <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat"
                 aria-label="ลบรูปโปสเตอร์">✕</button>
               <div class="upload small">
                 <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" />
                 <div class="preview" v-if="form.seatmapUrl">
-                   <img :src="srcFor(form.seatmapUrl)" alt="seatmap" />
+                  <img v-if="seatmapSrc" :src="seatmapSrc" class="detail" />
                 </div>
-                <div class="placeholder" v-else>
-                  อัปโหลดรูปภาพ</div>
+                <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
               </div>
             </div>
           </div>
-
         </div>
+      </div>
       </div>
     </section>
 
-
-
-    <!-- โซนของงาน -->
+    <!-- โซน -->
     <section class="card">
       <header class="card-head accent">
         <h2>โซนของงาน</h2>
-        <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
-      </header>
+       <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
 
+      </header>
       <div v-show="open.zone" class="card-body">
+
+      <div class="card-body">
         <div class="pill-row">
           <label class="pill">
-            <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)" />
+            <input type="checkbox" v-model="multiZones" />
             มีหลายโซน
           </label>
         </div>
 
         <div v-if="multiZones" class="zones">
-          <!-- หัวตาราง -->
           <div class="zones-head">
             <div>ชื่อโซน</div>
             <div>จำนวนที่นั่ง</div>
@@ -400,31 +559,29 @@ function clearSeat() {
             <div></div>
           </div>
 
-          <!-- แถวข้อมูล -->
           <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
             <input class="inp" v-model="z.name" placeholder="เช่น Zone A" />
-
             <input class="inp num" type="number" min="0" v-model.number="z.capacity" />
-
             <input class="inp num" type="number" min="0" step="100" v-model.number="z.price" />
-
-            <button class="del" type="button" @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+            <button class="zone-del" type="button" @click="removeZone(i)" aria-label="ลบโซน">✕</button>
           </div>
 
           <button class="addbar mt-3" type="button" @click="addZone()">+ เพิ่มโซน</button>
         </div>
       </div>
+       </div>
     </section>
-
 
     <!-- รอบของงาน -->
     <section class="card">
       <header class="card-head accent">
         <h2>รอบของงาน</h2>
         <button class="chev" :class="{ open: open.session }" @click="toggle('session')">▲</button>
-      </header>
 
+      </header>
       <div v-show="open.session" class="card-body">
+
+      <div class="card-body">
         <div class="pill-row">
           <label class="pill">
             <input type="checkbox" v-model="multiRounds" @change="onToggleMultiRounds(multiRounds)" />
@@ -432,8 +589,7 @@ function clearSeat() {
           </label>
         </div>
 
-        <div class="rounds">
-          <!-- หัวตาราง -->
+        <div class="rounds" v-if="form.rounds.length">
           <div class="rounds-head">
             <div>ชื่อรอบ</div>
             <div>เวลาเริ่ม</div>
@@ -443,14 +599,11 @@ function clearSeat() {
             <div></div>
           </div>
 
-          <!-- แถวข้อมูล -->
           <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
             <input class="inp" v-model="r.roundName"
               :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
-
             <input class="inp" type="time" v-model="r.startTime" required />
             <input class="inp" type="time" v-model="r.endTime" />
-
             <input class="inp num" type="number" min="0" v-model.number="r.maxAttendees" />
             <input class="inp num" type="number" min="0" v-model.number="r.price" />
 
@@ -461,19 +614,19 @@ function clearSeat() {
           <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()">+ เพิ่มรอบ</button>
         </div>
       </div>
+       </div>
     </section>
 
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
-      <button class="btn primary" @click="saveCreate()">สร้าง</button>
+      <button class="btn primary" @click="save()">บันทึก</button>
     </div>
   </section>
-
 </template>
 
 <style scoped>
 /* หัวcard*/
-.create-events {
+.edit-events {
   padding: 20px;
 }
 
@@ -624,6 +777,12 @@ button.chev {
   padding-left: 5px;
   margin-left: 5px;
 }
+
+.upload {
+  position: relative;
+}
+
+
 .gallery.two-col {
   display: grid;
   grid-template-columns: max-content max-content;

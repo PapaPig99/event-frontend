@@ -1,121 +1,180 @@
-<script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
-// หมวดหมู่ (หัวคอลัมน์)
-const categories = [
-  { key: 'concert',   label: 'คอนเสิร์ต',       color: '#4F46E5' },
-  { key: 'show',      label: 'การแสดง',         color: '#F59E0B' },
-  { key: 'edu',       label: 'การศึกษา',        color: '#8B5CF6' },
-  { key: 'business',  label: 'ธุรกิจและการงาน', color: '#10B981' },
-  { key: 'sport',     label: 'กีฬา',            color: '#6B7280' },
-]
-
-// ช่องค้นหาของแต่ละคอลัมน์
-const searches = ref(Object.fromEntries(categories.map(c => [c.key, ''])))
-
-// ข้อมูลตัวอย่าง (เชื่อม API จริงค่อยแทนที่)
-const events = ref([
-  { id: 1, name: 'MARIAH CAREY Mimi Live in Bangkok', category: 'concert', posterUrl: '/src/assets/NCT.jpg' },
-  // … เพิ่มได้
-])
-
-// filter อีเวนต์ตามหมวด + คำค้น
-function eventsIn (catKey) {
-  const kw = (searches.value[catKey] || '').toLowerCase()
-  return events.value.filter(e =>
-    e.category === catKey &&
-    (!kw || (e.name || '').toLowerCase().includes(kw))
-  )
-}
-
-function posterOf (ev) {
-  return ev.posterUrl || '/src/assets/vite.svg'
-}
-
-function goCreate () {
-  router.push('/create-event')
-}
-
-function goEdit (id) {
-  router.push(`/admin/events/${id}/edit`)
-}
-</script>
-
 <template>
-  <div class="wrap">
+  <section class="all-events">
     <header class="toolbar">
-      <div class="title">All Events</div>
-      <button class="btn add" @click="goCreate">+ เพิ่มอีเวนต์</button>
+      <div class="title"> All Events</div>
+      <RouterLink to="/admin/create" class="title">
+
+        <button class="btn add" @click="goCreate">+ เพิ่มอีเวนต์</button>
+      </RouterLink>
+
     </header>
 
-    <div class="board">
-      <!-- คอลัมน์แต่ละหมวด -->
-      <section
-        v-for="cat in categories"
-        :key="cat.key"
-        class="column"
-      >
-        <header class="column-head">
-          <span class="badge" :style="{ background: cat.color }"></span>
-          <span class="col-title">{{ cat.label }}</span>
-          <input
-            class="search"
-            :placeholder="`ค้นหาในหมวด ${cat.label}`"
-            v-model="searches[cat.key]"
-          />
-        </header>
+    <!-- คอนเทนเนอร์คอลัมน์ -->
+    <div class="columns">
+      <!-- คอนเสิร์ต -->
+      <div class="col">
+        <EventColumnHead title="คอนเสิร์ต" color="#51A6F7" v-model="qConcert" />
+        <EventCardAdmin v-for="ev in filteredConcerts" :key="ev.id" :event="ev" @view="onView" @edit="onEdit"
+          @remove="onRemove" />
 
-        <div class="column-body">
-          <!-- ใส่ v-for บนการ์ดโดยตรง (แก้ error) -->
-          <div
-            v-for="ev in eventsIn(cat.key)"
-            :key="ev.id"
-            class="event-card"
-            @click="goEdit(ev.id)"
-          >
-            <div class="poster">
-              <img :src="posterOf(ev)" alt="" />
-            </div>
-            <div class="meta">
-              <div class="name" :title="ev.name">{{ ev.name }}</div>
-            </div>
-          </div>
+      </div>
 
-          <div v-if="eventsIn(cat.key).length === 0" class="empty">
-            — ไม่มีอีเวนต์ —
-          </div>
-        </div>
-      </section>
+      <!-- การแสดง -->
+      <div class="col">
+        <EventColumnHead title="การแสดง" color="#F7B23B" v-model="qShow" />
+        <EventCardAdmin v-for="ev in filteredShows" :key="ev.id" :event="ev" @view="onView" @edit="onEdit"
+          @remove="onRemove" />
+
+      </div>
+
+      <!-- การศึกษา -->
+      <div class="col">
+        <EventColumnHead title="การศึกษา" color="#8F79F6" v-model="qEdu" />
+        <EventCardAdmin v-for="ev in filteredEdu" :key="ev.id" :event="ev" @view="onView" @edit="onEdit"
+          @remove="onRemove" />
+
+      </div>
+
+      <!-- ธุรกิจและการ -->
+      <div class="col">
+        <EventColumnHead title="ธุรกิจและการ" color="#35C864" v-model="qBiz" />
+        <EventCardAdmin v-for="ev in filteredBiz" :key="ev.id" :event="ev" @view="onView" @edit="onEdit"
+          @remove="onRemove" />
+
+      </div>
+
+      <!-- กีฬา -->
+      <div class="col">
+        <EventColumnHead title="กีฬา" color="#7A7A7A" v-model="qSport" />
+        <EventCardAdmin v-for="ev in filteredSports" :key="ev.id" :event="ev" @view="onView" @edit="onEdit"
+          @remove="onRemove" />
+
+      </div>
     </div>
-  </div>
+  </section>
 </template>
 
+<script setup>
+
+import { ref, computed, onMounted } from "vue"
+import { useRouter } from "vue-router"
+import EventColumnHead from "@/components/EventColumnHead.vue"
+import EventCardAdmin from '@/components/EventCardAdmin.vue'
+
+const router = useRouter()
+const events = ref([])
+
+onMounted(async () => {
+  try {
+    const res = await fetch("/api/events", { headers: { Accept: "application/json" } })
+    const data = await res.json()
+
+    events.value = Array.isArray(data) ? data : (data.items ?? [])
+    console.log("events:", events.value)
+  } catch (err) {
+    console.error("โหลด events ไม่ได้:", err)
+  }
+})
+
+
+function onView(id) {
+  router.push(`/admin/events/${id}/detail`)
+}
+
+function onEdit(id) {
+  router.push(`/admin/events/${id}/edit`)
+}
+async function onRemove(id) {
+  if (!confirm("คุณต้องการลบอีเวนต์นี้ใช่หรือไม่?")) return
+
+  try {
+    const res = await fetch(`/api/events/${id}`, { method: "DELETE" })
+    if (!res.ok) throw new Error("ลบไม่สำเร็จ")
+    // ลบออกจาก state ทันที
+    events.value = events.value.filter(ev => ev.id !== id)
+    alert("ลบอีเวนต์เรียบร้อยแล้ว")
+  } catch (err) {
+    console.error("เกิดข้อผิดพลาดในการลบ:", err)
+    alert("ไม่สามารถลบอีเวนต์ได้")
+  }
+}
+
+
+const qConcert = ref("")
+const qShow = ref("")
+const qEdu = ref("")
+const qBiz = ref("")
+const qSport = ref("")
+
+
+
+const lc = (v) => String(v ?? "").toLowerCase()
+const catKey = (c) => {
+  const s = lc(c)
+  if (s.includes("concert") || s.includes("คอนเสิร์")) return "concert"
+  if (s.includes("show") || s.includes("แสดง")) return "show"
+  if (s.includes("education") || s.includes("ศึกษา")) return "education"
+  if (s.includes("business") || s.includes("ธุรกิจ")) return "business"
+  if (s.includes("sport") || s.includes("กีฬา")) return "sport"
+  return "other"
+}
+
+const filteredConcerts = computed(() =>
+  events.value.filter(ev => catKey(ev.category) === "concert" && lc(ev.title).includes(lc(qConcert.value)))
+)
+const filteredShows = computed(() =>
+  events.value.filter(ev => catKey(ev.category) === "show" && lc(ev.title).includes(lc(qShow.value)))
+)
+const filteredEdu = computed(() =>
+  events.value.filter(ev => catKey(ev.category) === "education" && lc(ev.title).includes(lc(qEdu.value)))
+)
+const filteredBiz = computed(() =>
+  events.value.filter(ev => catKey(ev.category) === "business" && lc(ev.title).includes(lc(qBiz.value)))
+)
+const filteredSports = computed(() =>
+  events.value.filter(ev => catKey(ev.category) === "sport" && lc(ev.title).includes(lc(qSport.value)))
+)
+</script>
+
+
 <style scoped>
-.wrap{ padding:16px; }
-.toolbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-.title{ font-weight:700; font-size:18px; }
-.btn.add{ background:#3b82f6; color:#fff; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; }
-.board{ display:grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap:12px; }
+.all-events {
+  padding: 20px;
+}
 
-.column{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; display:flex; flex-direction:column; min-height:380px; }
-.column-head{ display:flex; align-items:center; gap:8px; padding:10px; border-bottom:1px solid #e5e7eb; }
-.badge{ width:12px; height:12px; border-radius:999px; display:inline-block; }
-.col-title{ font-weight:600; }
-.search{ margin-left:auto; height:32px; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; min-width:120px; }
+/* แถวบนสุด */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
-.column-body{ padding:10px; display:grid; gap:10px; grid-auto-rows: max-content; }
-.event-card{ border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; cursor:pointer; background:#fafafa; transition:transform .06s ease; }
-.event-card:hover{ transform:translateY(-1px); }
-.poster{ width:100%; aspect-ratio: 3/4; background:#f3f4f6; display:grid; place-items:center; overflow:hidden; }
-.poster img{ width:100%; height:100%; object-fit:cover; }
-.meta{ padding:8px; }
-.name{ font-size:13px; font-weight:600; line-height:1.3; display:-webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow:hidden; }
+.title {
+  color: #5f6063;
+  font-size: 20px;
+  font-weight: 400;
+}
 
-.empty{ color:#9ca3af; text-align:center; padding:18px 0; }
-@media (max-width: 1200px){ .board{ grid-template-columns: repeat(3, minmax(0,1fr)); } }
-@media (max-width: 800px){ .board{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
-@media (max-width: 560px){ .board{ grid-template-columns: 1fr; } }
+.btn.add {
+  font-size: 18px;
+  color: #fff;
+  border: 1px solid #eee;
+  background: #5465FF;
+  border-radius: 8px;
+  padding: 8px 15px;
+  cursor: pointer;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+/* กล่องคอลัมน์ */
+.col {
+  display: flex;
+  flex-direction: column;
+}
 </style>

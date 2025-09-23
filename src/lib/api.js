@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:3137',  // ✅ เพิ่ม baseURL
+  baseURL: '/api',  // ✅ เพิ่ม baseURL
 })
 
 api.interceptors.request.use(cfg => {

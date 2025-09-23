@@ -61,8 +61,8 @@ import logoSrc from '../assets/logo.png'
 import { registerUser } from '@/lib/auth'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
-const emit = defineEmits(['update:modelValue', 'signin', 'authed']) 
-// authed = สมัครสำเร็จ + ได้ token แล้ว
+// เพิ่ม 'signup' เพื่อให้ parent เดิมที่ฟัง @signup ไม่เตือน Extraneous event
+const emit = defineEmits(['update:modelValue', 'signin', 'authed', 'signup'])
 
 const name = ref('')
 const email = ref('')
@@ -72,9 +72,7 @@ const loading = ref(false)
 const error = ref('')
 const card = ref(null)
 
-function close(){ 
-  emit('update:modelValue', false) 
-}
+function close(){ emit('update:modelValue', false) }
 
 async function onSubmit(){
   error.value = ''
@@ -85,15 +83,14 @@ async function onSubmit(){
       name: name.value?.trim(),
       email: email.value?.trim(),
       password: password.value
-      // สามารถเพิ่ม phone, organization ภายหลังได้ โดยไม่กระทบโครงสร้าง DB
     }
-    const user = await registerUser(payload)  // POST /api/auth/register
-    // เก็บ token/user แล้วใน localStorage (ดู src/lib/auth.js)
-    emit('authed', user) // ให้ parent อัปเดต UI ถ้าต้องการ
-    // ปิด modal และเคลียร์ฟอร์ม
+    const user = await registerUser(payload) // จะเรียก /api/auth/register ผ่าน proxy
+    emit('authed', user)  // รองรับโค้ด parent แบบใหม่
+    emit('signup', user)  // รองรับโค้ด parent เดิม
     name.value = email.value = password.value = ''
     close()
   } catch (e) {
+    // โชว์ข้อความจาก backend ถ้ามี (เช่น Email already registered)
     error.value = e?.response?.data?.message || 'สมัครไม่สำเร็จ กรุณาลองใหม่'
   } finally {
     loading.value = false
@@ -109,16 +106,13 @@ onBeforeUnmount(()=> document.removeEventListener('focusin', trapFocus))
 
 watch(()=> props.modelValue, (open)=>{
   if(open){
-    requestAnimationFrame(()=>{
-      card.value?.querySelector('input[type="text"]')?.focus()
-    })
-  } else {
-    // ปิดแล้วล้าง error
-    error.value = ''
-    loading.value = false
+    requestAnimationFrame(()=>{ card.value?.querySelector('input[type="text"]')?.focus() })
+  }else{
+    error.value = ''; loading.value = false
   }
 })
 </script>
+
 
 <style scoped>
 .modal-root{ position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
