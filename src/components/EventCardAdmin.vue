@@ -56,12 +56,8 @@
 <script setup>
 const resolveImage = (filename) => {
   if (!filename) return ""
-  if (/^https?:\/\//i.test(filename)) return filename // เป็น URL เต็มอยู่แล้ว
-
-  const base = __IMAGE_BASE__ || ""
-  const cleanBase = String(base).replace(/\/+$/, "")     // ตัด / ท้าย
-  const cleanFile = String(filename).replace(/^\/+/, "") // ตัด / หน้า
-  return `${cleanBase}/${cleanFile}`
+  if (/^https?:\/\//i.test(filename)) return filename 
+  return filename
 }
 const props = defineProps({
   event: {

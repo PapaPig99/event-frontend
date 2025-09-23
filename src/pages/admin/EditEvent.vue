@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch ,computed, onUnmounted} from 'vue'
 import { useRoute } from 'vue-router'
 
 /* ---------- หุบ/ขยาย ---------- */
@@ -21,14 +21,18 @@ function thaiDateTimeToISOLocal(thaiDT) {
   return `${dateISO}T${time}`
 }
 
-/* ---------- ช่วยต่อ URL รูปจาก API ---------- */
-function toImageUrl(val) {
-  if (!val) return null
-  // ถ้ามาเป็น http(s) เต็มอยู่แล้ว ใช้ต่อได้เลย
-  if (/^https?:\/\//i.test(val)) return val
-  // ถ้าเป็นชื่อไฟล์ เช่น "poster.jpg" → ต่อกับ __IMAGE_BASE__
-  return (typeof __IMAGE_BASE__ !== 'undefined' ? __IMAGE_BASE__ : '/images/') + val
+/* ---------- รองรับข้อมูลที่ไม่มี(/images/ prefix)  ---------- */
+function resolveImage(filename) {
+  if (!filename) return ""
+  if (/^https?:\/\//i.test(filename)) return filename
+
+  // ถ้า backend ส่ง "/images/xxx.png" อยู่แล้ว → ใช้เลย
+  if (filename.startsWith("/images/")) return filename
+
+  // ถ้าเป็นชื่อไฟล์เปล่า → เติม /images/ ให้
+  return `/images/${filename.replace(/^\/+/, "")}`
 }
+
 /*------- ลบรูป --------- */
 function clearPoster() {
   form.posterUrl = null
@@ -39,36 +43,94 @@ function clearDetail() {
 function clearSeat() {
   form.seatmapUrl = null
 }
+/*------- เปลี่ยนรูป --------- */
+const posterObjUrl = ref(null)
+const detailObjUrl = ref(null)
+const seatmapObjUrl = ref(null)
+
+/*---------------- Poster ----------------*/
+function onPosterChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.poster = f
+  if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
+  posterObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.posterUrl = posterObjUrl.value
+}
+const posterSrc = computed(() =>
+  form.poster ? posterObjUrl.value : resolveImage(form.posterUrl)
+)
+
+/*---------------- Detail ----------------*/
+function onDetailChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.detailImage = f  
+  if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
+  detailObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.detailUrl = detailObjUrl.value
+}
+const detailSrc = computed(() =>
+  form.detailImage ? detailObjUrl.value : resolveImage(form.detailUrl)
+)
+
+/*---------------- Seatmap ----------------*/
+function onSeatmapChange(e) {
+  const f = e.target?.files?.[0] || null
+  form.seatmapImage = f   
+  if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
+  seatmapObjUrl.value = f ? URL.createObjectURL(f) : null
+  form.seatmapUrl = seatmapObjUrl.value
+}
+const seatmapSrc = computed(() =>
+  form.seatmapImage ? seatmapObjUrl.value : resolveImage(form.seatmapUrl)
+)
+
+/*---------------- Cleanup ----------------*/
+onUnmounted(() => {
+  if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
+  if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
+  if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
+})
 
 /* ---------- form ---------- */
 const form = reactive({
+  // รูป (URL เดิม/พรีวิว)
   posterUrl: null,
+  detailUrl: null,
+  seatmapUrl: null,
+
+  // core fields (ตรงกับ template เดิมของพ้ม)
   name: '',
   category: '',
   organizer: '',
   type: 'offline',
-  status: false,
-  regOpen: '',
-  regClose: '',
+  status: false,            // true = OPEN
+  regOpen: '',              // 'YYYY-MM-DDTHH:mm'
+  regClose: '',             // 'YYYY-MM-DDTHH:mm'
   saleNoEnd: false,
-  startDate: '',
-  endDate: '',
+  startDate: '',            // 'YYYY-MM-DD'
+  endDate: '',              // 'YYYY-MM-DD'
   venue: '',
   address: '',
-  gateOpen: '',
+  gateOpen: '',             // 'HH:mm' หรือข้อความอิสระ
   ageLimit: '',
   description: '',
-  detailUrl: null,
-  seatmapUrl: null,
-  rounds: [],
-  zones: []
-})
 
+  // ไฟล์ใหม่ (ถ้ามีผู้ใช้อัปโหลดในหน้า Edit)
+  poster: null,             // File|null
+  detailImage: null,        // File|null
+  seatmapImage: null,       // File|null
+
+  // sessions/rounds
+  rounds: [],
+
+  // zones
+  zones: [],
+})
+const route = useRoute()
 const multiRounds = ref(false)
 const multiZones = ref(false)
 const loading = ref(false)
 const saving = ref(false)
-const route = useRoute()
 
 const emptyRound = () => ({
   roundName: '',
@@ -77,6 +139,18 @@ const emptyRound = () => ({
   maxAttendees: null,
   price: null,
 })
+
+// เติมวินาทีให้ 'YYYY-MM-DDTHH:mm' → '...:ss'
+function withSecDT(dt) {
+  if (!dt) return null
+  return dt.length === 16 ? dt + ':00' : dt
+}
+
+// เติมวินาทีให้ 'HH:mm' → 'HH:mm:00'; ถ้าไม่ใช่เวลา ให้คงข้อความเดิม
+function withSec(t) {
+  if (!t) return null
+  return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t
+}
 
 /* ---------- load ---------- */
 onMounted(async () => {
@@ -91,37 +165,44 @@ onMounted(async () => {
     form.name = data.title ?? ''
     form.category = data.category ?? ''
     form.venue = data.location ?? ''
+    form.description = data.description ?? ''
     form.startDate = thaiDateToISODate(data.startDate)
     form.endDate = thaiDateToISODate(data.endDate)
     form.status = (data.status === 'OPEN')
     form.regOpen = thaiDateTimeToISOLocal(data.saleStartAt)
     form.saleNoEnd = !!data.saleUntilSoldout
     form.regClose = form.saleNoEnd ? '' : thaiDateTimeToISOLocal(data.saleEndAt)
-    form.gateOpen = (data.doorOpenTime || '').slice(0, 5)
+   form.gateOpen = data.doorOpenTime || ''
 
-    // รูปจาก API (รองรับทั้ง URL เต็มและชื่อไฟล์)
-    form.posterUrl = toImageUrl(data.posterImageUrl)
-    form.detailUrl = toImageUrl(data.detailImageUrl)
-    form.seatmapUrl = toImageUrl(data.seatmapImageUrl)
+    // รูปจาก API
+    form.posterUrl   = data.posterImageUrl || null
+    form.detailUrl   = data.detailImageUrl || null
+    form.seatmapUrl  = data.seatmapImageUrl || null
 
     // sessions -> rounds
     const sessions = Array.isArray(data.sessions) ? data.sessions : []
     form.rounds = sessions.length
       ? sessions.map(s => ({
-        roundName: s.name ?? '',
-        startTime: (s.startTime || '').slice(0, 5),
-        endTime: s.endTime ? s.endTime.slice(0, 5) : '',
-        maxAttendees: s.maxParticipants ?? null,
-        price: s.price ?? null
-      }))
+          id: s.id ?? null,
+          roundName: s.name ?? '',
+          startTime: (s.startTime || '').slice(0, 5),      // 'HH:mm:ss' -> 'HH:mm'
+          endTime: s.endTime ? s.endTime.slice(0, 5) : '',
+          maxAttendees: s.maxParticipants ?? null,
+          price: s.price ?? null
+        }))
       : [emptyRound()]
     multiRounds.value = form.rounds.length > 1
 
     // zones
     const zones = Array.isArray(data.zones) ? data.zones : []
-    form.zones = zones.map(z => ({
-      id: z.id, name: z.name ?? '', capacity: z.capacity ?? 0, price: z.price ?? 0
-    }))
+    form.zones = zones.length
+      ? zones.map(z => ({
+          id: z.id ?? null,
+          name: z.name ?? '',
+          capacity: z.capacity ?? 0,
+          price: z.price ?? 0
+        }))
+      : []
     multiZones.value = form.zones.length > 0
   } catch (e) {
     console.error(e)
@@ -130,6 +211,40 @@ onMounted(async () => {
     loading.value = false
   }
 })
+/* ---------- บังคับให้กรอก ---------- */
+
+function validate() {
+  const errs = []
+
+  if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
+  if (!form.category)      errs.push('กรุณาเลือกหมวดหมู่')
+  if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
+  if (!form.startDate)     errs.push('กรุณากรอกวันที่เริ่ม')
+  if (!form.endDate)       errs.push('กรุณากรอกวันที่สิ้นสุด')
+
+  // 1) sale_start_at NOT NULL
+  if (!form.regOpen) errs.push('กรุณากรอกวัน-เวลาเปิดขาย (regOpen)')
+
+  // 2) poster_image_url NOT NULL (ถ้าไม่อัปไฟล์ใหม่ ต้องมี URL เดิม)
+  if (!form.poster && !form.posterUrl) errs.push('กรุณาใส่รูปโปสเตอร์')
+
+  // 3) sessions.start_time NOT NULL
+  const validSessions = (form.rounds || []).filter(r => !!r.startTime)
+  if (validSessions.length === 0) errs.push('กรุณากรอกอย่างน้อย 1 รอบ พร้อมเวลาเริ่ม (HH:mm)')
+
+  // 4) zones.name NOT NULL + unique ต่อ event
+  const filteredZones = (form.zones || []).filter(z => !!z.name?.trim())
+  const dupNames = new Set()
+  const dup = filteredZones.some(z => {
+    const key = z.name.trim()
+    if (dupNames.has(key)) return true
+    dupNames.add(key)
+    return false
+  })
+  if (dup) errs.push('โซนห้ามชื่อซ้ำกัน')
+
+  return errs
+}
 
 /* ---------- rounds ops ---------- */
 function onToggleMultiRounds(v) {
@@ -163,63 +278,80 @@ function removeZone(i) {
   multiZones.value = form.zones.length > 0
 }
 
-/* ---------- uploads (preview อย่างเดียว) ---------- */
-/* ถ้าภายหลังต้องอัปโหลดไฟล์จริง ควรใช้ FormData ส่งไฟล์แยก */
-function onPosterChange(e) {
-  const f = e.target.files?.[0]
-  form.posterUrl = f ? URL.createObjectURL(f) : null
-}
-function onDetailChange(e) {
-  const f = e.target.files?.[0]
-  form.detailUrl = f ? URL.createObjectURL(f) : null
-}
-function onSeatmapChange(e) {
-  const f = e.target.files?.[0]
-  form.seatmapUrl = f ? URL.createObjectURL(f) : null
-}
+/* ---------- mapping form -> DTO (สำหรับ @RequestPart("data")) ---------- */
+function buildDto() {
+  return {
+    title: form.name,
+    description: form.description || '',
+    category: form.category,
+    location: form.venue,
+    startDate: form.startDate || null,
+    endDate: form.endDate || null,
+    status: form.status ? 'OPEN' : 'CLOSED',
 
-/* ---------- save (PUT) ---------- */
-async function save() {
-  try {
-    saving.value = true
-    const id = route.params.id || 1
+    saleStartAt: withSecDT(form.regOpen),                                  // required
+    saleEndAt: form.saleNoEnd ? null : (form.regClose ? withSecDT(form.regClose) : null),
+    saleUntilSoldout: !!form.saleNoEnd,
+    doorOpenTime: form.gateOpen || null,
 
-    const payload = {
-      title: form.name,
-      category: form.category,
-      location: form.venue,
-      startDate: form.startDate,
-      endDate: form.endDate,
-      status: form.status ? 'OPEN' : 'CLOSE',
-      saleStartAt: form.regOpen ? `${form.regOpen}:00` : null,
-      saleEndAt: form.saleNoEnd ? null : (form.regClose ? `${form.regClose}:00` : null),
-      saleUntilSoldout: !!form.saleNoEnd,
-      doorOpenTime: form.gateOpen ? `${form.gateOpen}:00` : null,
-      posterImageUrl: form.posterUrl,
-      detailImageUrl: form.detailUrl,
-      seatmapImageUrl: form.seatmapUrl,
-      sessions: form.rounds.map(r => ({
+    // รูป: ถ้าอัปใหม่ -> ให้ backend จัดการจากไฟล์; ถ้าไม่อัป -> ส่ง URL เดิม
+    posterImageUrl: form.poster ? null : form.posterUrl,                   // required
+    detailImageUrl: form.detailImage ? null : (form.detailUrl || null),
+    seatmapImageUrl: form.seatmapImage ? null : (form.seatmapUrl || null),
+    createdByUserId:  1 ,  //1ไปก่อน ค่อยเปลี่ยน
+
+    // sessions: ส่งเฉพาะที่มี startTime
+    sessions: (form.rounds || [])
+      .filter(r => !!r.startTime)
+      .map(r => ({
+        id: r.id ?? null,
         name: r.roundName,
-        startTime: r.startTime ? `${r.startTime}:00` : null,
-        endTime: r.endTime ? `${r.endTime}:00` : null,
+        startTime: withSec(r.startTime),
+        endTime: r.endTime ? withSec(r.endTime) : null,
         status: 'OPEN',
         maxParticipants: r.maxAttendees ?? null,
         price: r.price ?? null
       })),
-      zones: form.zones.map(z => ({
-        id: z.id,
-        name: z.name,
-        capacity: Number(z.capacity || 0),
-        price: Number(z.price || 0)
-      }))
+
+    // zones
+    zones: (form.zones || []).map(z => ({
+      id: z.id ?? null,
+      name: z.name,
+      capacity: Number(z.capacity || 0),
+      price: Number(z.price || 0)
+    }))
+  }
+}
+/* ---------- save (PUT) ---------- */
+async function save() {
+  try {
+    saving.value = true
+
+    // validate ก่อน
+    const errs = validate()
+    if (errs.length) {
+      alert(errs.join('\n'))
+      return
     }
 
-    const res = await fetch(`/api/events/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+    const id = route.params.id
+    const dto = buildDto()
+
+    const fd = new FormData()
+    // data ต้องเป็น application/json ให้ Spring แปลงเป็น DTO
+    fd.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }))
+    if (form.poster)      fd.append('poster',  form.poster)
+    if (form.detailImage) fd.append('detail',  form.detailImage)
+    if (form.seatmapImage)fd.append('seatmap', form.seatmapImage)
+
+    const res = await fetch(`/api/events/${id}`, { method: 'PUT', body: fd })
+    if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    console.error('Server error body:', text)   
+    throw new Error(`Save failed: ${res.status}`)
+}
+
+
     alert('บันทึกสำเร็จ')
   } catch (e) {
     console.error(e)
@@ -228,6 +360,7 @@ async function save() {
     saving.value = false
   }
 }
+
 </script>
 
 
@@ -259,7 +392,7 @@ async function save() {
             <div class="upload" :style="{ aspectRatio: '420 / 594' }">
               <input type="file" accept="image/png, image/jpeg" @change="onPosterChange" />
               <div class="preview" v-if="form.posterUrl">
-                <img :src="form.posterUrl" alt="poster" />
+                <img v-if="posterSrc" :src="posterSrc" class="poster" />
               </div>
               <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
             </div>
@@ -279,11 +412,11 @@ async function save() {
                 <label>หมวดหมู่ *</label>
                 <select class="inp" v-model="form.category">
                   <option value="">ยังไม่ได้เลือก</option>
-                  <option value="Concert">คอนเสิร์ต</option>
-                  <option value="Show">การแสดง</option>
-                  <option value="Education">การศึกษา</option>
-                  <option value="Business">ธุรกิจ</option>
-                  <option value="Sport">กีฬา</option>
+                  <option value="concert">คอนเสิร์ต</option>
+                  <option value="show">การแสดง</option>
+                  <option value="education">การศึกษา</option>
+                  <option value="business">ธุรกิจ</option>
+                  <option value="sport">กีฬา</option>
                 </select>
               </div>
 
@@ -358,10 +491,10 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>รายละเอียดและรูปภาพ</h2>
-        <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
+         <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
 
       </header>
-
+      <div v-show="open.description" class="card-body">
       <div class="card-body">
         <div class="stack">
           <div class="row">
@@ -377,7 +510,7 @@ async function save() {
               <div class="upload small">
                 <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" />
                 <div class="preview" v-if="form.detailUrl">
-                  <img :src="form.detailUrl" alt="detail" />
+                  <img v-if="detailSrc" :src="detailSrc" class="detail" />
                 </div>
                 <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
               </div>
@@ -390,7 +523,7 @@ async function save() {
               <div class="upload small">
                 <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" />
                 <div class="preview" v-if="form.seatmapUrl">
-                  <img :src="form.seatmapUrl" alt="seatmap" />
+                  <img v-if="seatmapSrc" :src="seatmapSrc" class="detail" />
                 </div>
                 <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
               </div>
@@ -398,15 +531,17 @@ async function save() {
           </div>
         </div>
       </div>
+      </div>
     </section>
 
     <!-- โซน -->
     <section class="card">
       <header class="card-head accent">
         <h2>โซนของงาน</h2>
-        <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
+       <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
 
       </header>
+      <div v-show="open.zone" class="card-body">
 
       <div class="card-body">
         <div class="pill-row">
@@ -434,6 +569,7 @@ async function save() {
           <button class="addbar mt-3" type="button" @click="addZone()">+ เพิ่มโซน</button>
         </div>
       </div>
+       </div>
     </section>
 
     <!-- รอบของงาน -->
@@ -443,6 +579,7 @@ async function save() {
         <button class="chev" :class="{ open: open.session }" @click="toggle('session')">▲</button>
 
       </header>
+      <div v-show="open.session" class="card-body">
 
       <div class="card-body">
         <div class="pill-row">
@@ -457,8 +594,8 @@ async function save() {
             <div>ชื่อรอบ</div>
             <div>เวลาเริ่ม</div>
             <div>เวลาจบ</div>
-            <div>ผู้เข้าร่วมสูงสุด</div>
-            <div>ราคา</div>
+            <div>ผู้เข้าร่วมสูงสุด(ไม่แบ่งzone)</div>
+            <div>ราคา(ไม่แบ่งzone)</div>
             <div></div>
           </div>
 
@@ -477,11 +614,12 @@ async function save() {
           <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()">+ เพิ่มรอบ</button>
         </div>
       </div>
+       </div>
     </section>
 
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
-      <button class="btn primary" :disabled="!isValid" @click="onSubmit">บันทึก</button>
+      <button class="btn primary" @click="save()">บันทึก</button>
     </div>
   </section>
 </template>
