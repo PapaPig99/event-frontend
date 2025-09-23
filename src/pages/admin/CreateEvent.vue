@@ -9,6 +9,7 @@ const toggle = key => (open[key] = !open[key])
 const form = reactive({
   // core fields
   name: '',
+  description: '',
   category: '',
   venue: '',
   startDate: '',       // YYYY-MM-DD
@@ -17,7 +18,7 @@ const form = reactive({
   regOpen: '',         // YYYY-MM-DDTHH:mm
   regClose: '',        // YYYY-MM-DDTHH:mm
   saleNoEnd: false,
-  gateOpen: '',        // HH:mm
+  gateOpen: '',        // string|null
 
   // รูป (เก็บทั้งไฟล์ที่ผู้ใช้เลือก + preview/ชื่อไฟล์)
   poster: null,        // File|null
@@ -57,8 +58,8 @@ function srcFor(u) {
   if (!u) return ''
   // ถ้าเป็น blob: / http(s): / หรือ path เองก็ใช้ได้เลย
   if (u.startsWith('blob:') || u.startsWith('http') || u.startsWith('/')) return u
-  // ถ้าเป็นแค่ชื่อไฟล์จาก backend ให้เติม base
-  return IMG_BASE + u
+
+  return  u
 }
 /* ---------- helpers เวลา/วันที่ ---------- */
 const withSec = t => (t ? (t.length === 5 ? `${t}:00` : t) : null)
@@ -68,6 +69,7 @@ const withSecDT = dt => (dt ? (dt.length === 16 ? `${dt}:00` : dt) : null)
 function buildDto() {
   return {
     title: form.name,
+    description: form.description,
     category: form.category,
     location: form.venue,
     startDate: form.startDate || null,
@@ -436,8 +438,8 @@ function clearSeat() {
             <div>ชื่อรอบ</div>
             <div>เวลาเริ่ม</div>
             <div>เวลาจบ</div>
-            <div>ผู้เข้าร่วมสูงสุด</div>
-            <div>ราคา</div>
+            <div>ผู้เข้าร่วมสูงสุด(ไม่แบ่งzone)</div>
+            <div>ราคา(ไม่แบ่งzone)</div>
             <div></div>
           </div>
 
