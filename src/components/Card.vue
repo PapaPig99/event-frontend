@@ -1,13 +1,39 @@
 <script setup>
+import { useRouter } from 'vue-router'
+
 defineProps({ event: { type: Object, required: true } })
 const emit = defineEmits(['open'])
+const router = useRouter()
+
+function isTokenValid() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    if (!token) return false
+    const [, payloadB64] = token.split('.')
+    if (!payloadB64) return false
+    const json = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')))
+    // exp เป็นวินาที; Date.now() เป็นมิลลิวินาที
+    const now = Math.floor(Date.now() / 1000)
+    return typeof json.exp === 'number' && json.exp > now
+  } catch {
+    return false
+  }
+}
+
+function handleOpen(id) {
+  if (!isTokenValid()) {
+    // เก็บที่มาว่าจะกลับมาหน้าไหนหลัง login
+    router.push({ path: '/login', query: { redirect: `/events/${id}` } })
+    return
+  }
+  emit('open', id)
+}
 </script>
 
 <template>
-  <article class="card" @click.self="emit('open', event.id)">
+  <article class="card" @click.self="handleOpen(event.id)">
     <figure class="poster">
       <img :src="event.img" :alt="event.title" />
-      <!-- เงาไล่ลงล่างสำหรับพื้นหลังสว่าง -->
       <i class="shade" aria-hidden="true"></i>
     </figure>
 
@@ -25,7 +51,7 @@ const emit = defineEmits(['open'])
         </li>
       </ul>
 
-      <button class="btn" @click="emit('open', event.id)">เข้าร่วมงาน</button>
+      <button class="btn" @click.stop="handleOpen(event.id)">เข้าร่วมงาน</button>
     </div>
   </article>
 </template>

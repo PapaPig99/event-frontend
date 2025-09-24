@@ -1,72 +1,98 @@
-<!-- src/pages/SeatZone.vue -->
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-/* ===== Router helpers (ใช้ปุ่มย้อนกลับ / ชำระเงิน) ===== */
+/* ===== Router ===== */
 const router = useRouter()
 const route  = useRoute()
+const routeId = computed(() => route.params.id)
 const goBack = () => router.back()
+const selectedItems = computed(() =>
+  zones.value
+    .filter(z => z.qty > 0)
+    .map(z => ({ zoneId: z.id, zoneLabel: z.label, unitPrice: z.price, qty: z.qty }))
+)
+const canProceed = computed(() => selectedItems.value.length > 0)
+
 function goToPayment() {
+  if (selectedItems.value.length === 0) {
+    // แจ้งเตือน และเลื่อนจอไปโซนเลือกบัตร
+    alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
+    const zonesEl = document.querySelector('.zones')
+    if (zonesEl) {
+      const y = zonesEl.getBoundingClientRect().top + window.pageYOffset - 80
+      window.scrollTo({ top: y, behavior: 'smooth' })
+    }
+    return
+  }
+
   const id = route.params.id
-  router.push({ name: 'payment', params: { id } })
+  const order = {
+    eventId: id,
+    title: title.value,
+    poster: poster.value || fallbackPoster,
+    show: selectedShow.value,
+    items: selectedItems.value,
+    fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10)
+  }
+
+  router.push({ name: 'payment', params: { id }, state: { order } })
+  sessionStorage.setItem(`order:${id}`, JSON.stringify(order))
 }
 
-/* =========================================================
-   HERO CARD — ข้อมูลด้านบน (แก้ไขได้ตามจริง)
-   - poster: รูปโปสเตอร์งาน -> เปลี่ยนเป็นไฟล์จริงใน src/assets ก็ได้
-   - title: ชื่องาน
-   - shows: รอบการแสดง
-========================================================= */
-const poster = ref(
-  // TODO: ใส่เป็นไฟล์ในโปรเจ็กต์ก็ได้ เช่น new URL('../assets/poster.jpg', import.meta.url).href
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
-)
-const title  = ref('MARIAH CAREY The Celebration of Mimi')  // TODO: เปลี่ยนชื่อจริง
-const shows  = ref(['Sat 11 Oct 2025 20:00'])                // TODO: เพิ่มรอบจริง
-const selectedShow = ref(shows.value[0])
 
-/* =========================================================
-   STEPPER — หน้าเลือกโซนเป็นขั้นที่ 2
-========================================================= */
+
+/* ===== Fallback รูป ===== */
+const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
+
+/* ===== HERO data (เริ่มว่าง แล้วค่อยเติมตอน mount) ===== */
+const poster = ref('')
+const title  = ref('')
+const shows  = ref([])
+const selectedShow = ref('')
+
+/* ===== Stepper ===== */
 const currentStep = 2
 
-/* =========================================================
-   ZONES — รายการโซนให้เลือก (แก้ไขชื่อ/ราคา/จำนวนคงเหลือตามจริง)
-   - qty: จำนวนที่เลือก (ตั้งต้นเป็น 0; จะตัดกับ remaining เอง)
-========================================================= */
-const zones = ref([
-  { id:'A', label:'Zone A', desc:'ที่นั่งติดเวทีที่สุด', price: 12000, remaining: 31, qty: 0 },
-  { id:'B', label:'Zone B', desc:'ที่นั่งติดเวทีที่สุด', price:  6500, remaining: 10, qty: 0 },
-  { id:'C', label:'Zone C', desc:'ด้านข้างซ้าย-ขวา',   price:  5000, remaining: 10, qty: 0 },
-  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
-])
-
-/* ติดตามโซนที่เพิ่งแก้ไขหลังสุด เพื่อเอาไปแสดงในสรุปด้านล่างให้เหมือนภาพ */
-const lastChangedIndex = ref(
-  zones.value.findIndex(z => z.qty > 0) === -1 ? 0 : zones.value.findIndex(z => z.qty > 0)
-)
-
-function inc(i){
-  const z = zones.value[i]
-  if (z.qty < z.remaining) {
-    z.qty++
-    lastChangedIndex.value = i
-  }
-}
-function dec(i){
-  const z = zones.value[i]
-  if (z.qty > 0) {
-    z.qty--
-    lastChangedIndex.value = i
-  }
+/* ===== อ่าน plan payload จาก state / session ===== */
+function readPlan(id) {
+  const st = history.state?.plan
+  if (st && typeof st === 'object') return st
+  try {
+    const raw = sessionStorage.getItem(`plan:${id}`)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj
+    }
+  } catch {}
+  return null
 }
 
-/* สรุปผล */
+onMounted(() => {
+  const id = routeId.value
+  const plan = readPlan(id)
+
+  // เติมค่าจาก plan
+  if (plan) {
+    title.value       = plan.title || ''
+    poster.value      = plan.poster || ''
+    shows.value       = Array.isArray(plan.shows) ? plan.shows : []
+    selectedShow.value = plan.selectedShow || shows.value[0] || ''
+  }
+
+  // fallback รูป กันรูปหาย/ว่าง
+  if (!poster.value)  poster.value  = fallbackPoster
+})
+
+/* ===== โซน (เดิมของคุณ) ===== */
+const zones = ref([])
+
+const lastChangedIndex = ref(0)
+
+
 const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
 const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
-
-/* โซนหลักที่โชว์ในแถบสรุป (เอาอันที่เพิ่งแก้ไขล่าสุด ถ้าไม่มีให้เอาอันแรกที่ qty>0) */
 const primaryZone = computed(()=>{
   const picked = zones.value.findIndex(z => z.qty > 0)
   const idx = (zones.value[lastChangedIndex.value]?.qty ?? 0) > 0
@@ -74,17 +100,151 @@ const primaryZone = computed(()=>{
     : (picked === -1 ? 0 : picked)
   return zones.value[idx]
 })
+function formatTHB(n){ return n.toLocaleString('en-US') + ' THB' }
 
-/* ฟอร์แมตราคา */
-function formatTHB(n){
-  return n.toLocaleString('en-US') + ' THB'
+// ===== helper: แปลง sessions -> zones =====
+function buildZonesFromSessions(sessions, startDate) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return []
+  const toHHmm = (t) => (t ? String(t).slice(0,5) : '')
+  const toThaiDate = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const dd = d.toLocaleDateString('en-GB', { day:'2-digit' })
+    const mon = d.toLocaleDateString('en-US', { month:'short' })
+    const yyyy = d.getFullYear()
+    return `${dd} ${mon} ${yyyy}`
+  }
+
+  return sessions.map((s, i) => {
+    const labelTime = toHHmm(s.start_time || s.startTime)
+    const labelDate = toThaiDate(startDate)
+    const label = s.name || (labelDate && labelTime ? `${labelDate} ${labelTime}` : (labelTime || labelDate || `รอบที่ ${i+1}`))
+    return {
+      id: s.id || `S${i+1}`,
+      label,
+      desc: s.name ? labelTime : '',                 // โชว์เวลาใต้ชื่อถ้ามี
+      price: Number(s.price ?? 0),
+      remaining: Number(s.max_participants ?? 0),
+      qty: 0
+    }
+  })
 }
+
+// ===== onMounted ใน SeatZone =====
+onMounted(async () => {
+  const id = routeId.value
+  const plan = readPlan(id)
+
+  // HERO จาก plan ก่อน
+  if (plan) {
+    title.value  = plan.title || ''
+    poster.value = plan.poster || fallbackPoster
+    shows.value  = Array.isArray(plan.shows) ? plan.shows : []
+    selectedShow.value = plan.selectedShow || shows.value[0] || ''
+  }
+  if (!poster.value) poster.value = fallbackPoster
+
+  // 1) ใช้ zones/sessions ที่ติดมาจาก plan ก่อน
+  if (plan?.zones?.length) {
+    zones.value = plan.zones.map((z, i) => ({
+      id: z.id || `Z${i+1}`,
+      label: z.name || z.label || `Zone ${i+1}`,
+      desc: z.desc || '',
+      price: Number(z.price ?? 0),
+      remaining: Number(z.capacity ?? z.remaining ?? 0),
+      qty: 0,
+    }))
+    return
+  }
+  if (plan?.sessions?.length) {
+    const startDate = plan.startDate || plan.start_date || plan.startDateRaw
+    zones.value = buildZonesFromSessions(plan.sessions, startDate)
+    return
+  }
+
+  // 2) ถ้า plan ไม่มีอะไรเลย → ดึงจาก API
+  try {
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const api = await res.json()
+
+    // HERO เสริมจาก API
+    if (!title.value)  title.value = api.title || ''
+    if (!poster.value) poster.value = api.posterImageUrl || api.detailImageUrl || fallbackPoster
+    if (!shows.value?.length) {
+      // สร้าง shows แบบง่ายจาก sessions
+      if (Array.isArray(api.sessions) && api.sessions.length) {
+        const toDate = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+        const toTime = (t)=> String(t||'').slice(0,5)
+        const d = api.startDate || api.start_date
+        shows.value = api.sessions.map(s => `${toDate(d)} ${toTime(s.start_time || s.startTime)}`)
+        selectedShow.value = shows.value[0] || ''
+      }
+    }
+
+    // ทำ zones
+    if (Array.isArray(api.zones) && api.zones.length) {
+      zones.value = api.zones.map((z, i) => ({
+        id: z.id || `Z${i+1}`,
+        label: z.name || `Zone ${i+1}`,
+        desc: '',
+        price: Number(z.price ?? 0),
+        remaining: Number(z.capacity ?? 0),
+        qty: 0,
+      }))
+    } else if (Array.isArray(api.sessions) && api.sessions.length) {
+      const startDate = api.startDate || api.start_date
+      zones.value = buildZonesFromSessions(api.sessions, startDate)
+    } else {
+      zones.value = []
+    }
+  } catch (e) {
+    console.error('SeatZone load failed:', e)
+    zones.value = []
+  }
+})
+
+// คงเหลือจริง = โควตาเดิม (remaining) - จำนวนที่เลือก (qty)
+function left(z) {
+  const cap = Number(z.remaining || 0)
+  const q   = Number(z.qty || 0)
+  return Math.max(0, cap - q)
+}
+
+function inc(i) {
+  const z = zones.value[i]
+  if (left(z) > 0) {        // เพิ่มได้ก็ต่อเมื่อยังเหลือ
+    z.qty++
+    lastChangedIndex.value = i
+  }
+}
+
+function dec(i) {
+  const z = zones.value[i]
+  if (z.qty > 0) {
+    z.qty--
+    lastChangedIndex.value = i
+  }
+}
+
+/* ===== Dropdown ที่นั่งว่าง ===== */
+const showAvail = ref(false)
+
+/* แถวสำหรับโชว์ในดรอปดาวน์ (คำนวณจาก zones ทุกครั้ง → อัปเดตอัตโนมัติ) */
+const availRows = computed(() =>
+  zones.value.map((z, i) => ({
+    code: z.label || z.name || z.id || `Zone ${i + 1}`,
+    left: left(z),                                // ใช้ฟังก์ชัน left ที่มีอยู่แล้ว
+  }))
+)
+
+
 </script>
 
-<template>
-  <div class="page">
-   
 
+<template>
+
+  <div class="page">
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
       <div class="poster-wrap">
@@ -108,9 +268,35 @@ function formatTHB(n){
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
         </div>
       </div>
+      <!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
+<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail = false">
+  <div class="avail-card">
+    <div class="avail-head">
+      <div class="title">โซนที่นั่ง</div>
+      <button class="close" @click="showAvail = false">✕</button>
+    </div>
+
+    <div class="avail-table">
+      <div class="row header">
+        <div class="col zone">โซนที่นั่ง</div>
+        <div class="col left">ที่นั่งว่าง</div>
+        <div class="col arrow"></div>
+      </div>
+
+      <div v-for="(r, idx) in availRows" :key="idx" class="row">
+        <div class="col zone">{{ r.code }}</div>
+        <div class="col left" :class="{ ok: r.left > 0, zero: r.left === 0 }">
+          {{ r.left.toLocaleString('en-US') }}
+        </div>
+      </div>
+
+      <div v-if="availRows.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
+    </div>
+  </div>
+</div>
     </section>
 
     <!-- STEP 2 -->
@@ -135,24 +321,26 @@ function formatTHB(n){
     <h2 class="section-title">เลือกที่นั่ง</h2>
 
     <!-- ===== รายการโซน ===== -->
-    <div class="zones">
-      <div v-for="(z,i) in zones" :key="z.id" class="zone-card">
-        <div class="zone-left">
-          <div class="zone-title">
-            <strong>{{ z.label }}</strong>
-            <span class="muted"> {{ z.desc }}</span>
-          </div>
-          <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
-          <div class="zone-leftover muted">เหลือ {{ z.remaining }} ที่นั่ง</div>
-        </div>
-
-        <div class="zone-qty">
-          <button class="qty-btn" @click="dec(i)">−</button>
-          <div class="qty-num">{{ z.qty }}</div>
-          <button class="qty-btn" @click="inc(i)">＋</button>
-        </div>
+   <div class="zones">
+  <div v-for="(z,i) in zones" :key="z.id" class="zone-card">
+    <div class="zone-left">
+      <div class="zone-title">
+        <strong>{{ z.label }}</strong>
+        <span class="muted"> {{ z.desc }}</span>
       </div>
+      <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
+      <!-- ใช้คงเหลือจริง -->
+      <div class="zone-leftover muted">เหลือ {{ left(z) }} ที่นั่ง</div>
     </div>
+
+    <div class="zone-qty">
+      <button class="qty-btn" :disabled="z.qty === 0" @click="dec(i)">−</button>
+      <div class="qty-num">{{ z.qty }}</div>
+      <button class="qty-btn" :disabled="left(z) === 0" @click="inc(i)">＋</button>
+    </div>
+  </div>
+</div>
+
 
     <!-- ===== สรุปด้านล่าง ===== -->
     <section class="summary">
@@ -170,7 +358,7 @@ function formatTHB(n){
 
   <div class="sum-actions">
     <button class="btn-back" @click="goBack">ย้อนกลับ</button>
-    <button class="btn-pay" @click="goToPayment">ชำระเงิน</button>
+    <button class="btn-pay" :disabled="!canProceed" @click="goToPayment">ชำระเงิน</button>
   </div>
 </section>
 
@@ -190,6 +378,66 @@ function formatTHB(n){
   padding: 16px 18px 40px;
 }
 
+.btn-pay:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+}
+
+.qty-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  filter:grayscale(30%);
+}
+
+/* ที่นั่งว่าง */
+/* ===== Availability Modal ===== */
+.avail-backdrop{
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.35);
+  display: grid; place-items: center;
+  z-index: 50;
+}
+.avail-card{
+  width: min(520px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.avail-head{
+  display:flex; align-items:center; justify-content:center;
+  position: relative;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+.avail-head .title{ font-size:22px; font-weight:800; color:#111; }
+.avail-head .close{
+  position:absolute; right:10px; top:10px;
+  background:transparent; border:none; font-size:20px; cursor:pointer;
+}
+
+.avail-table{ max-height: 60vh; overflow:auto; }
+.avail-table .row{
+  display:grid; grid-template-columns: 1fr 100px 28px;
+  align-items:center; gap: 8px;
+  padding: 12px 16px;
+  border-bottom:1px solid #f3f3f3;
+}
+.avail-table .row.header{
+  position: sticky; top:0; background:#fff; z-index:1;
+  font-weight:700; color:#666;
+}
+.avail-table .col.zone{ font-weight:700; color:#111; }
+.avail-table .col.left{ text-align:right; font-weight:800; }
+.avail-table .col.arrow{ text-align:center; color:#999; }
+
+.avail-table .col.left.ok{ color:#15a915; }   /* เขียว */
+.avail-table .col.left.zero{ color:#d30000; } /* แดง */
+
+.avail-table .empty{
+  padding: 18px; text-align:center; color:#666;
+}
 
 
 /* HERO */
