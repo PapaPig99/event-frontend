@@ -1,41 +1,192 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-/* ===== state ของ stepper ===== */
-const currentStep = 1
-
-/* ===== Router utils ===== */
+/* ===== Router ===== */
 const router = useRouter()
-const route = useRoute()
+const route  = useRoute()
 const routeId = computed(() => route.params.id)
 
-/* ===== ปุ่มย้อนกลับ / ไปหน้าถัดไป ===== */
-const goBack = () => router.back()
-function goToSeatzone() {
-  const id = route.params.id
-  router.push({ name: 'seat-zone', params: { id } })
+const currentStep = ref(1)   // ให้ step เริ่มต้นที่ 1
+
+/* ===== State สำหรับ UI ===== */
+const poster  = ref('')
+const title   = ref('')
+const seatmap = ref('')
+const shows   = ref([])         // ['Sat 11 Oct 2025 20:00', ...]
+const selectedShow = ref('')
+const statusText = ref('ที่นั่งว่าง') // ใส่ค่า default ไว้ก่อน
+
+/* ===== Helpers ===== */
+function readEventLite(id) {
+  // 1) history.state
+  const st = history.state?.eventLite
+  if (st && typeof st === 'object') return st
+
+  // 2) sessionStorage
+  try {
+    const raw = sessionStorage.getItem(`eventLite:${id}`)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj
+    }
+  } catch {}
+  return null
 }
 
-/* ===== ข้อมูลจำลอง/แก้เป็นของจริงได้ ===== */
-const poster = ref(
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
-  // ตัวอย่างไฟล์ภายในโปรเจกต์:
-  // new URL('../assets/poster.jpg', import.meta.url).href
-)
-const title = ref('MARIAH CAREY The Celebration of Mimi')
+function fmtThaiDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  // แปลงเป็นอังกฤษย่อวันแบบอย่างง่ายให้ตรงกับ UI ตัวอย่าง
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }) // Sat
+  const day  = d.toLocaleDateString('en-GB', { day: '2-digit' })      // 11
+  const mon  = d.toLocaleDateString('en-US', { month: 'short' })      // Oct
+  const year = d.getFullYear()                                        // 2025
+  return `${weekday} ${day} ${mon} ${year}`
+}
+function fmtHHmm(hms) {
+  if (!hms) return ''
+  return String(hms).slice(0,5) // '20:00'
+}
 
-const shows = ref([
-  'Sat 11 Oct 2025 20:00', // TODO: เพิ่ม/แก้รอบจริง
-])
-const selectedShow = ref(shows.value[0])
+/** รวมข้อมูลจาก API + eventLite (API ทับ) */
+function mergeEvent(api, lite) {
+  return { ...(lite || {}), ...(api || {}) }
+}
 
-const seatmap = ref(
-  'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png'
-  // ตัวอย่างไฟล์ภายในโปรเจกต์:
-  // new URL('../assets/seatmap.png', import.meta.url).href
-)
+/** แปลง sessions + start_date ให้เป็นรายการโชว์สำหรับ select */
+function buildShows(merged) {
+  const out = []
+
+  // กรณีมี sessions
+  if (Array.isArray(merged.sessions) && merged.sessions.length > 0) {
+    merged.sessions.forEach(s => {
+      // ถ้าฐานข้อมูลคุณเก็บ start_time เป็น TIME และวันที่อยู่ที่ events.start_date
+      const d = merged.startDate || merged.start_date
+      const t = s.start_time || s.startTime
+      if (d && t) {
+        out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
+      } else if (d) {
+        out.push(`${fmtThaiDate(d)}`)
+      } else if (t) {
+        out.push(`${fmtHHmm(t)}`)
+      }
+    })
+  }
+
+  // ถ้าไม่มี sessions แต่มี startDate/doorOpenTime จาก lite หรือ api
+  if (out.length === 0) {
+    const d = merged.startDate || merged.start_date || merged.startDateRaw
+    const t = merged.doorOpenTime || merged.door_open_time
+    if (d && t) out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
+    else if (d) out.push(`${fmtThaiDate(d)}`)
+  }
+
+  // อย่างน้อยให้มี 1 รายการ เพื่อไม่ให้ select ว่าง
+  if (out.length === 0) out.push('รอประกาศรอบ')
+
+  return out
+}
+
+/* ===== โหลดข้อมูลเมื่อเข้าหน้า ===== */
+onMounted(async () => {
+  const id = routeId.value
+  const lite = readEventLite(id)
+
+  // ใส่ค่าจาก lite ก่อน (หน้าโหลดไว)
+  if (lite) {
+    title.value   = lite.title || ''
+    poster.value  = lite.posterImageUrl || lite.poster || ''
+    seatmap.value = lite.seatmapImageUrl || lite.seatmap || ''
+  }
+
+  try {
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const api = await res.json()
+
+    const merged = mergeEvent(api, lite)
+    availability.value = buildAvailability(merged || lite || {})
+
+    title.value   = merged.title || title.value
+    poster.value  = merged.posterImageUrl  || merged.detailImageUrl || poster.value
+    seatmap.value = merged.seatmapImageUrl || merged.detailImageUrl || seatmap.value
+
+    shows.value = buildShows(merged)
+    selectedShow.value = shows.value[0]
+
+    // สถานะง่าย ๆ ตาม event.status / session.status
+    const evStatus = (merged.status || '').toUpperCase()
+    statusText.value = evStatus === 'CLOSED' ? 'ปิดการขาย' : 'ที่นั่งว่าง'
+  } catch (e) {
+    // ถ้า API ล้ม ก็ใช้ lite ต่อไป
+    shows.value = buildShows(lite || {})
+    selectedShow.value = shows.value[0]
+    console.error('load plan failed:', e)
+  }
+})
+
+/* ===== ปุ่มกลับ / ไปหน้าเลือกโซน ===== */
+const goBack = () => router.back()
+function goToSeatzone() {
+  const id = routeId.value
+  const payload = {
+    id,
+    title: title.value,
+    poster: poster.value,
+    shows: shows.value,
+    selectedShow: selectedShow.value,
+    statusText: statusText.value,
+    sessions: history.state?.eventLite?.sessions ?? [],   // 🔽 ส่ง sessions
+    zones: history.state?.eventLite?.zones ?? []         // 🔽 ส่ง zones ถ้ามี
+  }
+
+  router.push({
+    name: 'seat-zone',
+    params: { id },
+    state: { plan: payload }
+  })
+
+  sessionStorage.setItem(`plan:${id}`, JSON.stringify(payload))
+}
+
+/* ===== ดรอปดาวน์/โมดัลที่นั่งว่าง ===== */
+const showAvail = ref(false)
+
+/** คืนรายการโซน + คงเหลือ เพื่อไปแสดงในดรอปดาวน์
+ * พยายามอ่านจาก API > eventLite > fallback
+ */
+const availability = ref([])  // [{ code:'A1', left:156 }, ...]
+
+function buildAvailability(mergedOrLite){
+  const rows = []
+
+  // กรณีมี zones มากับ API/lite: ใช้ชื่อ/รหัสโซนและ remaining โดยตรง
+  if (Array.isArray(mergedOrLite?.zones) && mergedOrLite.zones.length){
+    mergedOrLite.zones.forEach((z, i)=>{
+      rows.push({
+        code: z.code || z.name || z.label || `Zone ${i+1}`,
+        left: Number(z.remaining ?? z.capacity ?? 0)
+      })
+    })
+  }
+
+  // บางอีเวนท์ไม่มี zone แต่มีที่นับจากแถวที่นั่ง (เช่น sessions/max_participants)
+  // ถ้าต้องใช้ sessions ให้สรุปต่อท้าย
+  if (rows.length === 0 && Array.isArray(mergedOrLite?.sessions)){
+    mergedOrLite.sessions.forEach((s, i)=>{
+      rows.push({
+        code: s.name || s.code || `รอบที่ ${i+1}`,
+        left: Number(s.max_participants ?? s.remaining ?? 0)
+      })
+    })
+  }
+  return rows
+}
+
+
 </script>
+
 
 <template>
   <div class="plan-page">
@@ -64,9 +215,43 @@ const seatmap = ref(
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
         </div>
       </div>
+
+      <!-- Modal / Dropdown: โซนที่นั่ง -->
+<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail=false">
+  <div class="avail-card">
+    <div class="avail-head">
+      <div class="title">โซนที่นั่ง</div>
+      <button class="close" @click="showAvail=false">✕</button>
+    </div>
+
+    <div class="avail-table">
+      <div class="row header">
+        <div class="col zone">โซนที่นั่ง</div>
+        <div class="col left">ที่นั่งว่าง</div>
+        <div class="col arrow"></div>
+      </div>
+
+      <div
+        v-for="(r,idx) in availability"
+        :key="idx"
+        class="row"
+      >
+        <div class="col zone">{{ r.code }}</div>
+        <div class="col left" :class="{'zero': r.left === 0, 'ok': r.left > 0}">
+          {{ r.left.toLocaleString('en-US') }}
+        </div>
+      </div>
+
+      <div v-if="availability.length === 0" class="empty">
+        ไม่พบข้อมูลที่นั่ง
+      </div>
+    </div>
+  </div>
+</div>
+
     </section>
 
     <!-- Stepper(ภาพแบบที่ 2) -->
@@ -115,6 +300,63 @@ const seatmap = ref(
   padding: 16px 18px 40px;
   box-sizing: border-box;
 }
+
+/* Backdrop */
+.avail-backdrop{
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.35);
+  display: grid; place-items: center;
+  z-index: 50;
+}
+
+/* Card */
+.avail-card{
+  width: min(520px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+
+/* Header */
+.avail-head{
+  display:flex; align-items:center; justify-content:center;
+  position: relative;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+.avail-head .title{
+  font-size: 22px; font-weight: 800; color:#111;
+}
+.avail-head .close{
+  position:absolute; right:10px; top:10px;
+  background:transparent; border:none; font-size:20px; cursor:pointer;
+}
+
+/* Table */
+.avail-table{ max-height: 60vh; overflow:auto; }
+.avail-table .row{
+  display:grid; grid-template-columns: 1fr 100px 28px;
+  align-items:center;
+  padding: 12px 16px;
+  border-bottom:1px solid #f3f3f3;
+}
+.avail-table .row.header{
+  position: sticky; top:0; background:#fff; z-index:1;
+  font-weight:700; color:#666;
+}
+.avail-table .row .col.zone{ font-weight:700; color:#111; }
+.avail-table .row .col.left{ text-align:right; font-weight:800; }
+.avail-table .row .col.arrow{ text-align:center; color:#999; }
+
+.avail-table .row .col.left.ok{ color:#15a915; }  /* เขียว */
+.avail-table .row .col.left.zero{ color:#d30000; } /* แดง */
+
+.avail-table .empty{
+  padding: 18px; text-align:center; color:#666;
+}
+
+
 
 /* Back */
 .back-row { margin: 10px 0 20px; }

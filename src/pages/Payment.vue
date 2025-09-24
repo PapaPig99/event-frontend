@@ -28,13 +28,18 @@ const defaultOrder = {
 
 const order = ref(defaultOrder)
 
-/* ลองรับจาก history.state.order ถ้ามีให้ใช้แทน */
 onMounted(() => {
-  const fromState = history.state?.order
-  if (fromState && typeof fromState === 'object') {
-    order.value = { ...defaultOrder, ...fromState }
+  const st = history.state?.order
+  if (st && typeof st === 'object') {
+    order.value = { ...defaultOrder, ...st }
+    return
+  }
+  const raw = sessionStorage.getItem(`order:${route.params.id}`)
+  if (raw) {
+    try { order.value = { ...defaultOrder, ...JSON.parse(raw) } } catch {}
   }
 })
+
 
 /* คำนวณยอดเงิน */
 const subtotal = computed(() =>
@@ -95,7 +100,7 @@ function cancelOrder() {
           <select :value="order.show" disabled>
             <option>{{ order.show }}</option>
           </select>
-          <button class="status-chip">ที่นั่งว่าง</button>
+         <button class="status-chip">ที่นั่งว่าง</button>
         </div>
       </div>
     </section>
@@ -214,10 +219,17 @@ function cancelOrder() {
 .chip-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .show-label{ font-size:13px; color:#333; font-weight:600; }
 select{ padding:8px 12px; border:1px solid #cfcfcf; border-radius:8px; background:#fff; }
-.status-chip{
-  background:#fff; border:1px solid #cfcfcf; padding:8px 14px; border-radius:10px;
-  font-weight:800; color:#111;
+.status-chip {
+  background: #f3f7ff;         /* เทาอ่อน */
+  border: 1px solid #d1d5db;
+  color: #9ca3af;              /* ตัวอักษรเทา */
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: not-allowed;         /* เปลี่ยนเมาส์เป็น not-allowed */
+  opacity: 0.8;                /* ทำให้ดูจางลงนิดหน่อย */
 }
+
 
 /* ===== Stepper 3 ===== */
 .stepper2 {
