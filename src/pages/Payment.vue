@@ -65,12 +65,11 @@ function startTimer() {
     if (remainingSec.value > 0) {
       remainingSec.value--
     } else {
-      clearTimer()
-      alert('หมดเวลาการชำระเงิน กรุณาเริ่มใหม่อีกครั้ง')
-      router.replace({ name: 'home' })
+      handleTimeout()   // << ใช้ modal แทน alert
     }
   }, 1000)
 }
+
 function clearTimer() {
   if (timerId) {
     clearInterval(timerId)
@@ -82,6 +81,20 @@ function cancelOrder() {
   // TODO: แจ้ง API ให้ปลด hold ถ้ามี
   router.replace({ name: 'home' })
 }
+
+// ===== Timeout Modal =====
+const isTimeoutOpen = ref(false)
+
+function handleTimeout() {
+  clearTimer()
+  isTimeoutOpen.value = true
+}
+
+function goHomeAfterTimeout() {
+  isTimeoutOpen.value = false
+  router.replace({ name: 'home' })
+}
+
 </script>
 
 <template>
@@ -182,6 +195,35 @@ function cancelOrder() {
       </aside>
     </section>
   </div>
+
+  <!-- Timeout Modal -->
+<div
+  v-if="isTimeoutOpen"
+  class="modal-backdrop"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="timeoutTitle"
+  @click.self="goHomeAfterTimeout"
+>
+  <div class="modal-card">
+    <div class="modal-icon">
+      <!-- นาฬิกาทราย -->
+      <svg viewBox="0 0 24 24" class="modal-svg" aria-hidden="true">
+        <path d="M6 2h12a1 1 0 0 1 1 1v2a5 5 0 0 1-2.46 4.3L14 11l2.54 1.7A5 5 0 0 1 19 17v2a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-2a5 5 0 0 1 2.46-4.3L10 11 7.46 9.3A5 5 0 0 1 5 5V3a1 1 0 0 1 1-1zm1 3a3 3 0 0 0 1.48 2.58L12 10l3.52-2.42A3 3 0 0 0 17 5V4H7zm10 13v-1a3 3 0 0 0-1.48-2.58L12 12l-3.52 2.42A3 3 0 0 0 7 17v1h10z"/>
+      </svg>
+    </div>
+
+    <h3 id="timeoutTitle" class="modal-title">หมดเวลาการชำระเงิน</h3>
+    <p class="modal-desc">
+      ระบบได้ปลดการจองที่นั่งของคุณแล้ว กรุณาเริ่มทำการจองใหม่อีกครั้ง
+    </p>
+
+    <div class="modal-cta">
+      <button class="modal-btn primary" @click="goHomeAfterTimeout">กลับหน้าแรก</button>
+    </div>
+  </div>
+</div>
+
 </template>
 
 <style scoped>
@@ -206,6 +248,77 @@ function cancelOrder() {
   letter-spacing: 0.5px;
   
 }
+
+/* ===== Timeout Modal ===== */
+.modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6); /* slate-900/60 */
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card{
+  width: min(520px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.35);
+  padding: 24px 22px 18px;
+  text-align: center;
+  animation: modal-pop .18s ease-out;
+}
+
+@keyframes modal-pop {
+  from { transform: translateY(4px) scale(.98); opacity: .0; }
+  to   { transform: translateY(0) scale(1);    opacity: 1; }
+}
+
+.modal-icon{
+  width: 64px; height: 64px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background: #fff1f0;           /* โทนอุ่น */
+  display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px #ffe2de;
+}
+.modal-svg{ width: 32px; height: 32px; fill: #ef4444; } /* red-500 */
+
+.modal-title{
+  margin: 6px 0 6px;
+  font-size: 20px;
+  font-weight: 900;
+  color: #111827;                 /* gray-900 */
+}
+
+.modal-desc{
+  margin: 0 0 14px;
+  color: #4b5563;                 /* gray-600 */
+  line-height: 1.65;
+}
+
+.modal-cta{
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.modal-btn{
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.modal-btn.primary{
+  background: linear-gradient(90deg, #ff6a13, #ff3d00);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+}
+.modal-btn.primary:active{ transform: translateY(1px); }
+
 
 /* ===== Cancel button ===== */
 .cancel-btn{

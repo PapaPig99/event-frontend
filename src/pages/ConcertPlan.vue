@@ -13,6 +13,12 @@ const currentStep = ref(1)   // ให้ step เริ่มต้นที่
 const poster  = ref('')
 const title   = ref('')
 const seatmap = ref('')
+const hasSeatmap = computed(() => {
+  const v = String(seatmap.value || '')
+  // ไม่มีรูป หรือเป็นรูป fallback ที่ชื่อมีคำว่า seatmap-fallback ให้ถือว่า "ไม่มีผัง"
+  return v.length > 0 && !/seatmap-fallback/i.test(v)
+})
+
 const shows   = ref([])         // ['Sat 11 Oct 2025 20:00', ...]
 const selectedShow = ref('')
 const statusText = ref('ที่นั่งว่าง') // ใส่ค่า default ไว้ก่อน
@@ -114,14 +120,25 @@ onMounted(async () => {
 
     shows.value = buildShows(merged)
     selectedShow.value = shows.value[0]
+    // ข้ามหน้า ถ้าไม่มีผัง
+if (!hasSeatmap.value) {
+  goToSeatzone()
+  return
+}
 
     // สถานะง่าย ๆ ตาม event.status / session.status
     const evStatus = (merged.status || '').toUpperCase()
     statusText.value = evStatus === 'CLOSED' ? 'ปิดการขาย' : 'ที่นั่งว่าง'
-  } catch (e) {
+  } 
+  catch (e) {
     // ถ้า API ล้ม ก็ใช้ lite ต่อไป
     shows.value = buildShows(lite || {})
     selectedShow.value = shows.value[0]
+    // ข้ามหน้า ถ้าไม่มีผัง
+if (!hasSeatmap.value) {
+  goToSeatzone()
+  return
+}
     console.error('load plan failed:', e)
   }
 })
@@ -273,12 +290,11 @@ function buildAvailability(mergedOrLite){
       </div>
     </section>
 
-    <h2 class="section-title">ดูผังการแสดง</h2>
+    <h2 class="section-title" v-if="hasSeatmap">ดูผังการแสดง</h2>
 
-    <div class="seatmap-wrap">
-      <!-- TODO:เปลี่ยน seatmap เป็นรูปใหญ่ของจริง -->
-      <img :src="seatmap" alt="Seat map" class="seatmap-img" />
-    </div>
+    <div class="seatmap-wrap" v-if="hasSeatmap">
+  <img :src="seatmap" alt="Seat map" class="seatmap-img" />
+</div>
 
     <div class="cta-row">
       <button class="btn-back" @click="goBack">ย้อนกลับ</button>
