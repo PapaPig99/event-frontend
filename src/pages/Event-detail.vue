@@ -82,11 +82,11 @@ onMounted(async () => {
 
 
 /* ========= ปุ่ม/การนำทาง ========= */
-function goToConcertPlan() {
-  // route นี้ถูกตั้ง meta.requiresAuth แล้ว ถ้าไม่ได้ล็อกอิน guard จะพากลับเอง
-  const id = route.params.id
-  router.push({ name: 'concert-plan', params: { id } })
-}
+// function goToConcertPlan() {
+//   // route นี้ถูกตั้ง meta.requiresAuth แล้ว ถ้าไม่ได้ล็อกอิน guard จะพากลับเอง
+//   const id = route.params.id
+//   router.push({ name: 'concert-plan', params: { id } })
+// }
 
 /* ========= utils ========= */
 function fmtThaiDate(iso) {

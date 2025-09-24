@@ -35,6 +35,7 @@ function goSignin(){ showRegister.value = false; showLogin.value = true }
 <template>
   <div>
     <NavBar @open-login="openLogin" />
+    
     <router-view />
     <Footer />
 
