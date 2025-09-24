@@ -1,41 +1,158 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-/* ===== state ของ stepper ===== */
-const currentStep = 1
-
-/* ===== Router utils ===== */
+/* ===== Router ===== */
 const router = useRouter()
-const route = useRoute()
+const route  = useRoute()
 const routeId = computed(() => route.params.id)
 
-/* ===== ปุ่มย้อนกลับ / ไปหน้าถัดไป ===== */
-const goBack = () => router.back()
-function goToSeatzone() {
-  const id = route.params.id
-  router.push({ name: 'seat-zone', params: { id } })
+const currentStep = ref(1)   // ให้ step เริ่มต้นที่ 1
+
+/* ===== State สำหรับ UI ===== */
+const poster  = ref('')
+const title   = ref('')
+const seatmap = ref('')
+const shows   = ref([])         // ['Sat 11 Oct 2025 20:00', ...]
+const selectedShow = ref('')
+const statusText = ref('ที่นั่งว่าง') // ใส่ค่า default ไว้ก่อน
+
+/* ===== Helpers ===== */
+function readEventLite(id) {
+  // 1) history.state
+  const st = history.state?.eventLite
+  if (st && typeof st === 'object') return st
+
+  // 2) sessionStorage
+  try {
+    const raw = sessionStorage.getItem(`eventLite:${id}`)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj
+    }
+  } catch {}
+  return null
 }
 
-/* ===== ข้อมูลจำลอง/แก้เป็นของจริงได้ ===== */
-const poster = ref(
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
-  // ตัวอย่างไฟล์ภายในโปรเจกต์:
-  // new URL('../assets/poster.jpg', import.meta.url).href
-)
-const title = ref('MARIAH CAREY The Celebration of Mimi')
+function fmtThaiDate(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  // แปลงเป็นอังกฤษย่อวันแบบอย่างง่ายให้ตรงกับ UI ตัวอย่าง
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' }) // Sat
+  const day  = d.toLocaleDateString('en-GB', { day: '2-digit' })      // 11
+  const mon  = d.toLocaleDateString('en-US', { month: 'short' })      // Oct
+  const year = d.getFullYear()                                        // 2025
+  return `${weekday} ${day} ${mon} ${year}`
+}
+function fmtHHmm(hms) {
+  if (!hms) return ''
+  return String(hms).slice(0,5) // '20:00'
+}
 
-const shows = ref([
-  'Sat 11 Oct 2025 20:00', // TODO: เพิ่ม/แก้รอบจริง
-])
-const selectedShow = ref(shows.value[0])
+/** รวมข้อมูลจาก API + eventLite (API ทับ) */
+function mergeEvent(api, lite) {
+  return { ...(lite || {}), ...(api || {}) }
+}
 
-const seatmap = ref(
-  'https://www.thaiticketmajor.com/img_seat/prefix_1/1022/37022/37022-687718fb198b0-s.png'
-  // ตัวอย่างไฟล์ภายในโปรเจกต์:
-  // new URL('../assets/seatmap.png', import.meta.url).href
-)
+/** แปลง sessions + start_date ให้เป็นรายการโชว์สำหรับ select */
+function buildShows(merged) {
+  const out = []
+
+  // กรณีมี sessions
+  if (Array.isArray(merged.sessions) && merged.sessions.length > 0) {
+    merged.sessions.forEach(s => {
+      // ถ้าฐานข้อมูลคุณเก็บ start_time เป็น TIME และวันที่อยู่ที่ events.start_date
+      const d = merged.startDate || merged.start_date
+      const t = s.start_time || s.startTime
+      if (d && t) {
+        out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
+      } else if (d) {
+        out.push(`${fmtThaiDate(d)}`)
+      } else if (t) {
+        out.push(`${fmtHHmm(t)}`)
+      }
+    })
+  }
+
+  // ถ้าไม่มี sessions แต่มี startDate/doorOpenTime จาก lite หรือ api
+  if (out.length === 0) {
+    const d = merged.startDate || merged.start_date || merged.startDateRaw
+    const t = merged.doorOpenTime || merged.door_open_time
+    if (d && t) out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
+    else if (d) out.push(`${fmtThaiDate(d)}`)
+  }
+
+  // อย่างน้อยให้มี 1 รายการ เพื่อไม่ให้ select ว่าง
+  if (out.length === 0) out.push('รอประกาศรอบ')
+
+  return out
+}
+
+/* ===== โหลดข้อมูลเมื่อเข้าหน้า ===== */
+onMounted(async () => {
+  const id = routeId.value
+  const lite = readEventLite(id)
+
+  // ใส่ค่าจาก lite ก่อน (หน้าโหลดไว)
+  if (lite) {
+    title.value   = lite.title || ''
+    poster.value  = lite.posterImageUrl || lite.poster || ''
+    seatmap.value = lite.seatmapImageUrl || lite.seatmap || ''
+  }
+
+  try {
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const api = await res.json()
+
+    const merged = mergeEvent(api, lite)
+
+    title.value   = merged.title || title.value
+    poster.value  = merged.posterImageUrl  || merged.detailImageUrl || poster.value
+    seatmap.value = merged.seatmapImageUrl || merged.detailImageUrl || seatmap.value
+
+    shows.value = buildShows(merged)
+    selectedShow.value = shows.value[0]
+
+    // สถานะง่าย ๆ ตาม event.status / session.status
+    const evStatus = (merged.status || '').toUpperCase()
+    statusText.value = evStatus === 'CLOSED' ? 'ปิดการขาย' : 'ที่นั่งว่าง'
+  } catch (e) {
+    // ถ้า API ล้ม ก็ใช้ lite ต่อไป
+    shows.value = buildShows(lite || {})
+    selectedShow.value = shows.value[0]
+    console.error('load plan failed:', e)
+  }
+})
+
+/* ===== ปุ่มกลับ / ไปหน้าเลือกโซน ===== */
+const goBack = () => router.back()
+function goToSeatzone() {
+  const id = routeId.value
+  const payload = {
+    id,
+    title: title.value,
+    poster: poster.value,
+    shows: shows.value,
+    selectedShow: selectedShow.value,
+    statusText: statusText.value,
+    sessions: history.state?.eventLite?.sessions ?? [],   // 🔽 ส่ง sessions
+    zones: history.state?.eventLite?.zones ?? []         // 🔽 ส่ง zones ถ้ามี
+  }
+
+  router.push({
+    name: 'seat-zone',
+    params: { id },
+    state: { plan: payload }
+  })
+
+  sessionStorage.setItem(`plan:${id}`, JSON.stringify(payload))
+}
+
+
+
 </script>
+
 
 <template>
   <div class="plan-page">

@@ -19,8 +19,29 @@ const route = useRoute()
 const router = useRouter()
 function goToConcertPlan() {
   const id = route.params.id
-  router.push({ name: 'concert-plan', params: { id } })
+
+  // เก็บข้อมูลย่อจากหน้า detail (ใส่เท่าที่มี)
+  const eventLite = {
+    id,
+    title: event.value.title,
+    posterImageUrl: event.value.poster,
+    seatmapImageUrl: event.value.seatmap,
+    startDateRaw: route.params.startDate || undefined, // ถ้ามี
+    location: event.value.venueText,
+    doorOpenTime: event.value.timeText?.replace(' น.','') || undefined
+  }
+
+  // ส่งผ่าน state
+  router.push({
+    name: 'concert-plan',
+    params: { id },
+    state: { eventLite }
+  })
+
+  // กันพลาด: เก็บลง sessionStorage
+  sessionStorage.setItem(`eventLite:${id}`, JSON.stringify(eventLite))
 }
+
 
 onMounted(async () => {
   try {

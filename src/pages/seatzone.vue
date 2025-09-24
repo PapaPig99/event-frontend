@@ -1,72 +1,74 @@
-<!-- src/pages/SeatZone.vue -->
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
-/* ===== Router helpers (ใช้ปุ่มย้อนกลับ / ชำระเงิน) ===== */
+/* ===== Router ===== */
 const router = useRouter()
 const route  = useRoute()
+const routeId = computed(() => route.params.id)
 const goBack = () => router.back()
 function goToPayment() {
   const id = route.params.id
   router.push({ name: 'payment', params: { id } })
 }
 
-/* =========================================================
-   HERO CARD — ข้อมูลด้านบน (แก้ไขได้ตามจริง)
-   - poster: รูปโปสเตอร์งาน -> เปลี่ยนเป็นไฟล์จริงใน src/assets ก็ได้
-   - title: ชื่องาน
-   - shows: รอบการแสดง
-========================================================= */
-const poster = ref(
-  // TODO: ใส่เป็นไฟล์ในโปรเจ็กต์ก็ได้ เช่น new URL('../assets/poster.jpg', import.meta.url).href
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
-)
-const title  = ref('MARIAH CAREY The Celebration of Mimi')  // TODO: เปลี่ยนชื่อจริง
-const shows  = ref(['Sat 11 Oct 2025 20:00'])                // TODO: เพิ่มรอบจริง
-const selectedShow = ref(shows.value[0])
+/* ===== Fallback รูป ===== */
+const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
 
-/* =========================================================
-   STEPPER — หน้าเลือกโซนเป็นขั้นที่ 2
-========================================================= */
+/* ===== HERO data (เริ่มว่าง แล้วค่อยเติมตอน mount) ===== */
+const poster = ref('')
+const title  = ref('')
+const shows  = ref([])
+const selectedShow = ref('')
+
+/* ===== Stepper ===== */
 const currentStep = 2
 
-/* =========================================================
-   ZONES — รายการโซนให้เลือก (แก้ไขชื่อ/ราคา/จำนวนคงเหลือตามจริง)
-   - qty: จำนวนที่เลือก (ตั้งต้นเป็น 0; จะตัดกับ remaining เอง)
-========================================================= */
+/* ===== อ่าน plan payload จาก state / session ===== */
+function readPlan(id) {
+  const st = history.state?.plan
+  if (st && typeof st === 'object') return st
+  try {
+    const raw = sessionStorage.getItem(`plan:${id}`)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj
+    }
+  } catch {}
+  return null
+}
+
+onMounted(() => {
+  const id = routeId.value
+  const plan = readPlan(id)
+
+  // เติมค่าจาก plan
+  if (plan) {
+    title.value       = plan.title || ''
+    poster.value      = plan.poster || ''
+    shows.value       = Array.isArray(plan.shows) ? plan.shows : []
+    selectedShow.value = plan.selectedShow || shows.value[0] || ''
+  }
+
+  // fallback รูป กันรูปหาย/ว่าง
+  if (!poster.value)  poster.value  = fallbackPoster
+})
+
+/* ===== โซน (เดิมของคุณ) ===== */
 const zones = ref([
   { id:'A', label:'Zone A', desc:'ที่นั่งติดเวทีที่สุด', price: 12000, remaining: 31, qty: 0 },
   { id:'B', label:'Zone B', desc:'ที่นั่งติดเวทีที่สุด', price:  6500, remaining: 10, qty: 0 },
   { id:'C', label:'Zone C', desc:'ด้านข้างซ้าย-ขวา',   price:  5000, remaining: 10, qty: 0 },
-  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 }, // TODO: ตั้งค่าเริ่มต้นตามต้องการ
+  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 },
 ])
 
-/* ติดตามโซนที่เพิ่งแก้ไขหลังสุด เพื่อเอาไปแสดงในสรุปด้านล่างให้เหมือนภาพ */
-const lastChangedIndex = ref(
-  zones.value.findIndex(z => z.qty > 0) === -1 ? 0 : zones.value.findIndex(z => z.qty > 0)
-)
+const lastChangedIndex = ref(0)
+function inc(i){ const z = zones.value[i]; if (z.qty < z.remaining) { z.qty++; lastChangedIndex.value = i } }
+function dec(i){ const z = zones.value[i]; if (z.qty > 0) { z.qty--; lastChangedIndex.value = i } }
 
-function inc(i){
-  const z = zones.value[i]
-  if (z.qty < z.remaining) {
-    z.qty++
-    lastChangedIndex.value = i
-  }
-}
-function dec(i){
-  const z = zones.value[i]
-  if (z.qty > 0) {
-    z.qty--
-    lastChangedIndex.value = i
-  }
-}
-
-/* สรุปผล */
 const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
 const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
-
-/* โซนหลักที่โชว์ในแถบสรุป (เอาอันที่เพิ่งแก้ไขล่าสุด ถ้าไม่มีให้เอาอันแรกที่ qty>0) */
 const primaryZone = computed(()=>{
   const picked = zones.value.findIndex(z => z.qty > 0)
   const idx = (zones.value[lastChangedIndex.value]?.qty ?? 0) > 0
@@ -74,12 +76,114 @@ const primaryZone = computed(()=>{
     : (picked === -1 ? 0 : picked)
   return zones.value[idx]
 })
+function formatTHB(n){ return n.toLocaleString('en-US') + ' THB' }
 
-/* ฟอร์แมตราคา */
-function formatTHB(n){
-  return n.toLocaleString('en-US') + ' THB'
+// ===== helper: แปลง sessions -> zones =====
+function buildZonesFromSessions(sessions, startDate) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return []
+  const toHHmm = (t) => (t ? String(t).slice(0,5) : '')
+  const toThaiDate = (iso) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const dd = d.toLocaleDateString('en-GB', { day:'2-digit' })
+    const mon = d.toLocaleDateString('en-US', { month:'short' })
+    const yyyy = d.getFullYear()
+    return `${dd} ${mon} ${yyyy}`
+  }
+
+  return sessions.map((s, i) => {
+    const labelTime = toHHmm(s.start_time || s.startTime)
+    const labelDate = toThaiDate(startDate)
+    const label = s.name || (labelDate && labelTime ? `${labelDate} ${labelTime}` : (labelTime || labelDate || `รอบที่ ${i+1}`))
+    return {
+      id: s.id || `S${i+1}`,
+      label,
+      desc: s.name ? labelTime : '',                 // โชว์เวลาใต้ชื่อถ้ามี
+      price: Number(s.price ?? 0),
+      remaining: Number(s.max_participants ?? 0),
+      qty: 0
+    }
+  })
 }
+
+// ===== onMounted ใน SeatZone =====
+onMounted(async () => {
+  const id = routeId.value
+  const plan = readPlan(id)
+
+  // HERO จาก plan ก่อน
+  if (plan) {
+    title.value  = plan.title || ''
+    poster.value = plan.poster || fallbackPoster
+    shows.value  = Array.isArray(plan.shows) ? plan.shows : []
+    selectedShow.value = plan.selectedShow || shows.value[0] || ''
+  }
+  if (!poster.value) poster.value = fallbackPoster
+
+  // 1) ใช้ zones/sessions ที่ติดมาจาก plan ก่อน
+  if (plan?.zones?.length) {
+    zones.value = plan.zones.map((z, i) => ({
+      id: z.id || `Z${i+1}`,
+      label: z.name || z.label || `Zone ${i+1}`,
+      desc: z.desc || '',
+      price: Number(z.price ?? 0),
+      remaining: Number(z.capacity ?? z.remaining ?? 0),
+      qty: 0,
+    }))
+    return
+  }
+  if (plan?.sessions?.length) {
+    const startDate = plan.startDate || plan.start_date || plan.startDateRaw
+    zones.value = buildZonesFromSessions(plan.sessions, startDate)
+    return
+  }
+
+  // 2) ถ้า plan ไม่มีอะไรเลย → ดึงจาก API
+  try {
+    const res = await fetch(`/api/events/${id}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const api = await res.json()
+
+    // HERO เสริมจาก API
+    if (!title.value)  title.value = api.title || ''
+    if (!poster.value) poster.value = api.posterImageUrl || api.detailImageUrl || fallbackPoster
+    if (!shows.value?.length) {
+      // สร้าง shows แบบง่ายจาก sessions
+      if (Array.isArray(api.sessions) && api.sessions.length) {
+        const toDate = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+        const toTime = (t)=> String(t||'').slice(0,5)
+        const d = api.startDate || api.start_date
+        shows.value = api.sessions.map(s => `${toDate(d)} ${toTime(s.start_time || s.startTime)}`)
+        selectedShow.value = shows.value[0] || ''
+      }
+    }
+
+    // ทำ zones
+    if (Array.isArray(api.zones) && api.zones.length) {
+      zones.value = api.zones.map((z, i) => ({
+        id: z.id || `Z${i+1}`,
+        label: z.name || `Zone ${i+1}`,
+        desc: '',
+        price: Number(z.price ?? 0),
+        remaining: Number(z.capacity ?? 0),
+        qty: 0,
+      }))
+    } else if (Array.isArray(api.sessions) && api.sessions.length) {
+      const startDate = api.startDate || api.start_date
+      zones.value = buildZonesFromSessions(api.sessions, startDate)
+    } else {
+      zones.value = []
+    }
+  } catch (e) {
+    console.error('SeatZone load failed:', e)
+    zones.value = []
+  }
+})
+
+
+
 </script>
+
 
 <template>
   <div class="page">
