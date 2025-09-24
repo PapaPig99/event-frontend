@@ -239,14 +239,25 @@ function scrollToStage() {
               <span class="price-text">{{ event.priceText }}</span>
             </div>
 
-            <div class="date-buy">
-              <div class="date-chip">
-                <div class="chip-label">วันที่แสดง</div>
-                <div class="chip-val">{{ event.dateText }}</div>
-              </div>
-              <button class="buy-btn" @click="goToConcertPlan">ซื้อตั๋ว</button>
+            <!-- ตารางวันที่แสดง / เวลา (สไตล์เหมือนภาพ) -->
+<div class="date-table">
+  <div class="dt-row dt-header">
+    <div class="dt-col">วันที่แสดง</div>
+    <div class="dt-col right">เวลา</div>
+  </div>
 
-            </div>
+  <div class="dt-row dt-body">
+    <div class="dt-col">
+      {{ event.dateText }}
+    </div>
+    <div class="dt-col right">
+      <button class="time-pill" @click="goToConcertPlan">
+        {{ event.timeText || '—' }}
+      </button>
+    </div>
+  </div>
+</div>
+
           </div>
         </div>
       </div>
@@ -274,6 +285,55 @@ function scrollToStage() {
 
 <!-- ===== Global minimal reset (กัน Vite บีบ #app) ===== -->
 <style>
+
+/* ===== Date/Time table inside black stage card ===== */
+.date-table{
+  margin-top: 8px;
+  border-radius: 12px;
+  overflow: hidden;               /* ให้หัว/ตัวตารางโค้งต่อกัน */
+  box-shadow: 0 8px 18px rgba(0,0,0,.25);
+}
+
+.dt-row{
+  display: grid;
+  grid-template-columns: 1fr 140px; /* ซ้าย: วันที่ (ยืด), ขวา: เวลา (กว้างคงที่) */
+  align-items: center;
+}
+
+.dt-header{
+  background: #4b5563d8;            /* เทาเข้มตามภาพ */
+  color: #fff;
+  font-weight: 800;
+  padding: 10px 14px;
+}
+
+.dt-body{
+  background: #ffffff;
+  color: #111;
+  padding: 10px 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.dt-col.right{
+  text-align: right;
+}
+
+/* ปุ่มเวลาแดง (เม็ดกลมขวา) */
+.time-pill{
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color: #fff;
+  font-weight: 900;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+}
+
+/* ปรับระยะบน/ล่างในการ์ด */
+.stage-card .date-table{ margin-top: 10px; }
+
+
 :root{ --orange:#ff6a13; --red:#ff3d00; --ink:#0f172a; --muted:#6b7280; }
 body { margin: 0; }
 #app { max-width: none; padding: 0; }
