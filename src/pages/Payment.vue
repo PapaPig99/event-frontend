@@ -28,13 +28,18 @@ const defaultOrder = {
 
 const order = ref(defaultOrder)
 
-/* ลองรับจาก history.state.order ถ้ามีให้ใช้แทน */
 onMounted(() => {
-  const fromState = history.state?.order
-  if (fromState && typeof fromState === 'object') {
-    order.value = { ...defaultOrder, ...fromState }
+  const st = history.state?.order
+  if (st && typeof st === 'object') {
+    order.value = { ...defaultOrder, ...st }
+    return
+  }
+  const raw = sessionStorage.getItem(`order:${route.params.id}`)
+  if (raw) {
+    try { order.value = { ...defaultOrder, ...JSON.parse(raw) } } catch {}
   }
 })
+
 
 /* คำนวณยอดเงิน */
 const subtotal = computed(() =>

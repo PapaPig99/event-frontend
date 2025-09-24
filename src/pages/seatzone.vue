@@ -7,10 +7,40 @@ const router = useRouter()
 const route  = useRoute()
 const routeId = computed(() => route.params.id)
 const goBack = () => router.back()
+const selectedItems = computed(() =>
+  zones.value
+    .filter(z => z.qty > 0)
+    .map(z => ({ zoneId: z.id, zoneLabel: z.label, unitPrice: z.price, qty: z.qty }))
+)
+const canProceed = computed(() => selectedItems.value.length > 0)
+
 function goToPayment() {
+  if (selectedItems.value.length === 0) {
+    // แจ้งเตือน และเลื่อนจอไปโซนเลือกบัตร
+    alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
+    const zonesEl = document.querySelector('.zones')
+    if (zonesEl) {
+      const y = zonesEl.getBoundingClientRect().top + window.pageYOffset - 80
+      window.scrollTo({ top: y, behavior: 'smooth' })
+    }
+    return
+  }
+
   const id = route.params.id
-  router.push({ name: 'payment', params: { id } })
+  const order = {
+    eventId: id,
+    title: title.value,
+    poster: poster.value || fallbackPoster,
+    show: selectedShow.value,
+    items: selectedItems.value,
+    fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10)
+  }
+
+  router.push({ name: 'payment', params: { id }, state: { order } })
+  sessionStorage.setItem(`order:${id}`, JSON.stringify(order))
 }
+
+
 
 /* ===== Fallback รูป ===== */
 const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
@@ -56,16 +86,10 @@ onMounted(() => {
 })
 
 /* ===== โซน (เดิมของคุณ) ===== */
-const zones = ref([
-  { id:'A', label:'Zone A', desc:'ที่นั่งติดเวทีที่สุด', price: 12000, remaining: 31, qty: 0 },
-  { id:'B', label:'Zone B', desc:'ที่นั่งติดเวทีที่สุด', price:  6500, remaining: 10, qty: 0 },
-  { id:'C', label:'Zone C', desc:'ด้านข้างซ้าย-ขวา',   price:  5000, remaining: 10, qty: 0 },
-  { id:'D', label:'Zone D', desc:'หลังสุด',             price:  3500, remaining: 10, qty: 0 },
-])
+const zones = ref([])
 
 const lastChangedIndex = ref(0)
-function inc(i){ const z = zones.value[i]; if (z.qty < z.remaining) { z.qty++; lastChangedIndex.value = i } }
-function dec(i){ const z = zones.value[i]; if (z.qty > 0) { z.qty--; lastChangedIndex.value = i } }
+
 
 const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
 const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
@@ -180,15 +204,37 @@ onMounted(async () => {
   }
 })
 
+// คงเหลือจริง = โควตาเดิม (remaining) - จำนวนที่เลือก (qty)
+function left(z) {
+  const cap = Number(z.remaining || 0)
+  const q   = Number(z.qty || 0)
+  return Math.max(0, cap - q)
+}
+
+function inc(i) {
+  const z = zones.value[i]
+  if (left(z) > 0) {        // เพิ่มได้ก็ต่อเมื่อยังเหลือ
+    z.qty++
+    lastChangedIndex.value = i
+  }
+}
+
+function dec(i) {
+  const z = zones.value[i]
+  if (z.qty > 0) {
+    z.qty--
+    lastChangedIndex.value = i
+  }
+}
+
 
 
 </script>
 
 
 <template>
-  <div class="page">
-   
 
+  <div class="page">
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
       <div class="poster-wrap">
@@ -239,24 +285,26 @@ onMounted(async () => {
     <h2 class="section-title">เลือกที่นั่ง</h2>
 
     <!-- ===== รายการโซน ===== -->
-    <div class="zones">
-      <div v-for="(z,i) in zones" :key="z.id" class="zone-card">
-        <div class="zone-left">
-          <div class="zone-title">
-            <strong>{{ z.label }}</strong>
-            <span class="muted"> {{ z.desc }}</span>
-          </div>
-          <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
-          <div class="zone-leftover muted">เหลือ {{ z.remaining }} ที่นั่ง</div>
-        </div>
-
-        <div class="zone-qty">
-          <button class="qty-btn" @click="dec(i)">−</button>
-          <div class="qty-num">{{ z.qty }}</div>
-          <button class="qty-btn" @click="inc(i)">＋</button>
-        </div>
+   <div class="zones">
+  <div v-for="(z,i) in zones" :key="z.id" class="zone-card">
+    <div class="zone-left">
+      <div class="zone-title">
+        <strong>{{ z.label }}</strong>
+        <span class="muted"> {{ z.desc }}</span>
       </div>
+      <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
+      <!-- ใช้คงเหลือจริง -->
+      <div class="zone-leftover muted">เหลือ {{ left(z) }} ที่นั่ง</div>
     </div>
+
+    <div class="zone-qty">
+      <button class="qty-btn" :disabled="z.qty === 0" @click="dec(i)">−</button>
+      <div class="qty-num">{{ z.qty }}</div>
+      <button class="qty-btn" :disabled="left(z) === 0" @click="inc(i)">＋</button>
+    </div>
+  </div>
+</div>
+
 
     <!-- ===== สรุปด้านล่าง ===== -->
     <section class="summary">
@@ -274,7 +322,7 @@ onMounted(async () => {
 
   <div class="sum-actions">
     <button class="btn-back" @click="goBack">ย้อนกลับ</button>
-    <button class="btn-pay" @click="goToPayment">ชำระเงิน</button>
+    <button class="btn-pay" :disabled="!canProceed" @click="goToPayment">ชำระเงิน</button>
   </div>
 </section>
 
@@ -294,6 +342,17 @@ onMounted(async () => {
   padding: 16px 18px 40px;
 }
 
+.btn-pay:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  filter: grayscale(40%);
+}
+
+.qty-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+  filter:grayscale(30%);
+}
 
 
 /* HERO */
