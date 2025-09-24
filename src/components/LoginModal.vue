@@ -53,8 +53,22 @@ const show = ref(false)
 const card = ref(null)
 
 function close() { emit('update:modelValue', false) }
-function onSubmit() { emit('login', { email: email.value, password: password.value }) }
-
+async function onSubmit() {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+  const data = await res.json()
+  if (res.ok && data.token) {
+    localStorage.setItem('token', data.token)
+    const redirect = route.query.redirect || '/events'
+    emit('authed') 
+    router.replace(String(redirect))
+  } else {
+    alert(data.message || 'เกิดข้อผิดพลาด ไม่สามารถเข้าสู่ระบบได้')
+  }
+}
 function trapFocus(e) {
   if (!props.modelValue || !card.value) return
   if (!card.value.contains(e.target)) card.value.focus()

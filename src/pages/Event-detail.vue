@@ -1,8 +1,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router' 
+import { useRoute, useRouter } from 'vue-router'
+import api from '@/lib/api'   // ใช้ axios instance ที่แนบ JWT ให้เอง
 
-/* ========= ตัวแปรที่เทมเพลตใช้ ========= */
+/* ========= state ========= */
+const route = useRoute()
+const router = useRouter()
+
+const loading = ref(true)
+const err = ref('')
 const event = ref({
   category: '',
   title: '',
@@ -14,9 +20,6 @@ const event = ref({
   seatmap: '',
 })
 
-/* ========= โหลดจาก API ตาม id ใน URL ========= */
-const route = useRoute()
-const router = useRouter()
 function goToConcertPlan() {
   const id = route.params.id
 
@@ -43,32 +46,49 @@ function goToConcertPlan() {
 }
 
 
+/* ========= รูป fallback =========
+   ถ้าไม่มีไฟล์ใน src/assets ให้ย้ายไปโฟลเดอร์ /public และเปลี่ยนเป็น '/poster-fallback.jpg'
+*/
+const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
+
+/* ========= โหลดจาก API (ต้องแนบ JWT) ========= */
 onMounted(async () => {
+  loading.value = true; err.value = ''
   try {
-    const id = route.params.id
-    const res = await fetch(`/api/events/${id}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const d = await res.json()
-
-    // ✅ สร้างข้อความราคาแบบ fallback
-    const priceText = buildPriceText(d)
-
+    const { data: d } = await api.get(`/events/${route.params.id}`)
     event.value = {
-      category: d.category ?? '',
       title: d.title ?? '',
+      category: d.category ?? '',
       dateText: fmtThaiDate(d.startDate),
       venueText: d.location ?? '',
-      timeText : fmtThaiTime(d.doorOpenTime),
-      priceText,
-      poster:   d.posterImageUrl  || d.detailImageUrl || fallbackPoster,
-      seatmap:  d.seatmapImageUrl || d.detailImageUrl || fallbackSeatmap,
+      timeText: fmtThaiTime(d.doorOpenTime),
+      priceText: buildPriceText(d),
+      poster: d.posterImageUrl || d.detailImageUrl || fallbackPoster,
+      seatmap: d.seatmapImageUrl || d.detailImageUrl || fallbackSeatmap,
     }
   } catch (e) {
-    console.error('load event failed:', e)
+    const s = e?.response?.status
+    if (s === 401 || s === 403) {
+      router.replace({ name: 'home', query: { login: 1, redirect: route.fullPath } })
+      return
+    }
+    if (s === 404) { err.value = 'ไม่พบงานนี้'; return }
+    err.value = 'เกิดข้อผิดพลาดภายใน'
+  } finally {
+    loading.value = false
   }
 })
 
-/* ========= utils แปลงวันที่/เวลา ========= */
+
+/* ========= ปุ่ม/การนำทาง ========= */
+function goToConcertPlan() {
+  // route นี้ถูกตั้ง meta.requiresAuth แล้ว ถ้าไม่ได้ล็อกอิน guard จะพากลับเอง
+  const id = route.params.id
+  router.push({ name: 'concert-plan', params: { id } })
+}
+
+/* ========= utils ========= */
 function fmtThaiDate(iso) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -78,96 +98,66 @@ function fmtThaiTime(hms) {
   if (!hms) return ''
   return String(hms).slice(0, 5) + ' น.'
 }
+function isNum(v) { return v !== null && v !== undefined && !isNaN(Number(v)) }
 
-/* ========= รูป fallback ========= */
-const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
-const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
-
-/* ========= เพิ่ม state สำหรับ modal ========= */
-const isSeatmapOpen = ref(false)
-const seatmapLarge = ref('')
-
-function openSeatmap() {
-  isSeatmapOpen.value = true
-  seatmapLarge.value = event.value.seatmap
-}
-function closeSeatmap() {
-  isSeatmapOpen.value = false
-}
-
-/* ========= helper: สร้างข้อความ "ราคาบัตร" แบบครอบคลุม ========= */
 function buildPriceText(d) {
-  // 1) ถ้า backend ส่ง priceText มาแล้ว ใช้อันนั้นเลย
-  if (d && typeof d.priceText === 'string' && d.priceText.trim()) {
-    return d.priceText.trim()
-  }
-
-  // 2) รวมราคาจากโครงสร้างต่าง ๆ
+  if (d && typeof d.priceText === 'string' && d.priceText.trim()) return d.priceText.trim()
   const set = new Set()
-
-  // min/max ระดับงาน
   if (isNum(d?.minPrice)) set.add(Number(d.minPrice))
   if (isNum(d?.maxPrice)) set.add(Number(d.maxPrice))
-
-  // zones บนสุด
   if (Array.isArray(d?.zones)) {
     d.zones.forEach(z => {
-      if (isNum(z?.price))    set.add(Number(z.price))
+      if (isNum(z?.price)) set.add(Number(z.price))
       if (isNum(z?.minPrice)) set.add(Number(z.minPrice))
       if (isNum(z?.maxPrice)) set.add(Number(z.maxPrice))
     })
   }
-
-  // sessions[].zones
   if (Array.isArray(d?.sessions)) {
     d.sessions.forEach(s => {
       if (isNum(s?.minPrice)) set.add(Number(s.minPrice))
       if (isNum(s?.maxPrice)) set.add(Number(s.maxPrice))
       if (Array.isArray(s?.zones)) {
         s.zones.forEach(z => {
-          if (isNum(z?.price))    set.add(Number(z.price))
+          if (isNum(z?.price)) set.add(Number(z.price))
           if (isNum(z?.minPrice)) set.add(Number(z.minPrice))
           if (isNum(z?.maxPrice)) set.add(Number(z.maxPrice))
         })
       }
     })
   }
-
-  const prices = [...set].filter(n => Number.isFinite(n))
-  if (prices.length === 0) return '—'     // ไม่มีข้อมูลราคาเลย ให้แสดงขีด
-
-  // เรียงจากมาก → น้อย เพื่อฟีลแบบ 20,000 / 15,000 / ...
-  prices.sort((a, b) => b - a)
-
-  // ใช้รูปแบบไทยและหน่วย
+  const prices = [...set].filter(Number.isFinite).sort((a, b) => b - a)
+  if (!prices.length) return '—'
   const txt = prices.map(n => n.toLocaleString('th-TH')).join(' / ')
-  const unit = (d?.currency && String(d.currency).toUpperCase() !== 'THB')
-    ? d.currency
-    : 'บาท'
+  const unit = (d?.currency && String(d.currency).toUpperCase() !== 'THB') ? d.currency : 'บาท'
   return `${txt} ${unit}`
 }
 
-function isNum(v) {
-  return v !== null && v !== undefined && !isNaN(Number(v))
-}
+/* ========= seatmap modal ========= */
+const isSeatmapOpen = ref(false)
+const seatmapLarge = ref('')
+function openSeatmap(){ isSeatmapOpen.value = true; seatmapLarge.value = event.value.seatmap }
+function closeSeatmap(){ isSeatmapOpen.value = false }
 
+/* ========= scroll helper ========= */
 const stageSection = ref(null)
-
-// เลื่อนแบบเผื่อมี header fixed โดยเว้น offset 80px (ปรับได้)
 function scrollToStage() {
   const el = stageSection.value
   if (!el) return
   const y = el.getBoundingClientRect().top + window.pageYOffset - 80
   window.scrollTo({ top: y, behavior: 'smooth' })
 }
-
 </script>
 
 
 
 
+
 <template>
-  <div class="detail-page">
+  <!-- ด้านบนของ template ภายใน .detail-page -->
+<div v-if="loading" style="padding:16px">กำลังโหลด...</div>
+<p v-else-if="err" style="padding:16px; color:#b91c1c">{{ err }}</p>
+
+  <div class="detail-page" v-else>
     <!-- HERO: แถบไล่สี + หัวเรื่อง -->
     <section class="hero fullbleed">
       <div class="container">
@@ -342,6 +332,7 @@ body { margin: 0; }
   font-weight: 800;
   margin: 8px 0 14px;
   color: var(--ink);
+  text-align: left;
 }
 
 /* grid: ซ้ายรายละเอียด / ขวาราคา */
