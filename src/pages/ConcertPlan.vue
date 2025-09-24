@@ -106,6 +106,7 @@ onMounted(async () => {
     const api = await res.json()
 
     const merged = mergeEvent(api, lite)
+    availability.value = buildAvailability(merged || lite || {})
 
     title.value   = merged.title || title.value
     poster.value  = merged.posterImageUrl  || merged.detailImageUrl || poster.value
@@ -149,6 +150,39 @@ function goToSeatzone() {
   sessionStorage.setItem(`plan:${id}`, JSON.stringify(payload))
 }
 
+/* ===== ดรอปดาวน์/โมดัลที่นั่งว่าง ===== */
+const showAvail = ref(false)
+
+/** คืนรายการโซน + คงเหลือ เพื่อไปแสดงในดรอปดาวน์
+ * พยายามอ่านจาก API > eventLite > fallback
+ */
+const availability = ref([])  // [{ code:'A1', left:156 }, ...]
+
+function buildAvailability(mergedOrLite){
+  const rows = []
+
+  // กรณีมี zones มากับ API/lite: ใช้ชื่อ/รหัสโซนและ remaining โดยตรง
+  if (Array.isArray(mergedOrLite?.zones) && mergedOrLite.zones.length){
+    mergedOrLite.zones.forEach((z, i)=>{
+      rows.push({
+        code: z.code || z.name || z.label || `Zone ${i+1}`,
+        left: Number(z.remaining ?? z.capacity ?? 0)
+      })
+    })
+  }
+
+  // บางอีเวนท์ไม่มี zone แต่มีที่นับจากแถวที่นั่ง (เช่น sessions/max_participants)
+  // ถ้าต้องใช้ sessions ให้สรุปต่อท้าย
+  if (rows.length === 0 && Array.isArray(mergedOrLite?.sessions)){
+    mergedOrLite.sessions.forEach((s, i)=>{
+      rows.push({
+        code: s.name || s.code || `รอบที่ ${i+1}`,
+        left: Number(s.max_participants ?? s.remaining ?? 0)
+      })
+    })
+  }
+  return rows
+}
 
 
 </script>
@@ -181,9 +215,43 @@ function goToSeatzone() {
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
         </div>
       </div>
+
+      <!-- Modal / Dropdown: โซนที่นั่ง -->
+<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail=false">
+  <div class="avail-card">
+    <div class="avail-head">
+      <div class="title">โซนที่นั่ง</div>
+      <button class="close" @click="showAvail=false">✕</button>
+    </div>
+
+    <div class="avail-table">
+      <div class="row header">
+        <div class="col zone">โซนที่นั่ง</div>
+        <div class="col left">ที่นั่งว่าง</div>
+        <div class="col arrow"></div>
+      </div>
+
+      <div
+        v-for="(r,idx) in availability"
+        :key="idx"
+        class="row"
+      >
+        <div class="col zone">{{ r.code }}</div>
+        <div class="col left" :class="{'zero': r.left === 0, 'ok': r.left > 0}">
+          {{ r.left.toLocaleString('en-US') }}
+        </div>
+      </div>
+
+      <div v-if="availability.length === 0" class="empty">
+        ไม่พบข้อมูลที่นั่ง
+      </div>
+    </div>
+  </div>
+</div>
+
     </section>
 
     <!-- Stepper(ภาพแบบที่ 2) -->
@@ -232,6 +300,63 @@ function goToSeatzone() {
   padding: 16px 18px 40px;
   box-sizing: border-box;
 }
+
+/* Backdrop */
+.avail-backdrop{
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.35);
+  display: grid; place-items: center;
+  z-index: 50;
+}
+
+/* Card */
+.avail-card{
+  width: min(520px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+
+/* Header */
+.avail-head{
+  display:flex; align-items:center; justify-content:center;
+  position: relative;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+.avail-head .title{
+  font-size: 22px; font-weight: 800; color:#111;
+}
+.avail-head .close{
+  position:absolute; right:10px; top:10px;
+  background:transparent; border:none; font-size:20px; cursor:pointer;
+}
+
+/* Table */
+.avail-table{ max-height: 60vh; overflow:auto; }
+.avail-table .row{
+  display:grid; grid-template-columns: 1fr 100px 28px;
+  align-items:center;
+  padding: 12px 16px;
+  border-bottom:1px solid #f3f3f3;
+}
+.avail-table .row.header{
+  position: sticky; top:0; background:#fff; z-index:1;
+  font-weight:700; color:#666;
+}
+.avail-table .row .col.zone{ font-weight:700; color:#111; }
+.avail-table .row .col.left{ text-align:right; font-weight:800; }
+.avail-table .row .col.arrow{ text-align:center; color:#999; }
+
+.avail-table .row .col.left.ok{ color:#15a915; }  /* เขียว */
+.avail-table .row .col.left.zero{ color:#d30000; } /* แดง */
+
+.avail-table .empty{
+  padding: 18px; text-align:center; color:#666;
+}
+
+
 
 /* Back */
 .back-row { margin: 10px 0 20px; }

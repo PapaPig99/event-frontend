@@ -227,6 +227,16 @@ function dec(i) {
   }
 }
 
+/* ===== Dropdown ที่นั่งว่าง ===== */
+const showAvail = ref(false)
+
+/* แถวสำหรับโชว์ในดรอปดาวน์ (คำนวณจาก zones ทุกครั้ง → อัปเดตอัตโนมัติ) */
+const availRows = computed(() =>
+  zones.value.map((z, i) => ({
+    code: z.label || z.name || z.id || `Zone ${i + 1}`,
+    left: left(z),                                // ใช้ฟังก์ชัน left ที่มีอยู่แล้ว
+  }))
+)
 
 
 </script>
@@ -258,9 +268,35 @@ function dec(i) {
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
         </div>
       </div>
+      <!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
+<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail = false">
+  <div class="avail-card">
+    <div class="avail-head">
+      <div class="title">โซนที่นั่ง</div>
+      <button class="close" @click="showAvail = false">✕</button>
+    </div>
+
+    <div class="avail-table">
+      <div class="row header">
+        <div class="col zone">โซนที่นั่ง</div>
+        <div class="col left">ที่นั่งว่าง</div>
+        <div class="col arrow"></div>
+      </div>
+
+      <div v-for="(r, idx) in availRows" :key="idx" class="row">
+        <div class="col zone">{{ r.code }}</div>
+        <div class="col left" :class="{ ok: r.left > 0, zero: r.left === 0 }">
+          {{ r.left.toLocaleString('en-US') }}
+        </div>
+      </div>
+
+      <div v-if="availRows.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
+    </div>
+  </div>
+</div>
     </section>
 
     <!-- STEP 2 -->
@@ -352,6 +388,55 @@ function dec(i) {
   opacity:.45;
   cursor:not-allowed;
   filter:grayscale(30%);
+}
+
+/* ที่นั่งว่าง */
+/* ===== Availability Modal ===== */
+.avail-backdrop{
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.35);
+  display: grid; place-items: center;
+  z-index: 50;
+}
+.avail-card{
+  width: min(520px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+  overflow: hidden;
+}
+.avail-head{
+  display:flex; align-items:center; justify-content:center;
+  position: relative;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+.avail-head .title{ font-size:22px; font-weight:800; color:#111; }
+.avail-head .close{
+  position:absolute; right:10px; top:10px;
+  background:transparent; border:none; font-size:20px; cursor:pointer;
+}
+
+.avail-table{ max-height: 60vh; overflow:auto; }
+.avail-table .row{
+  display:grid; grid-template-columns: 1fr 100px 28px;
+  align-items:center; gap: 8px;
+  padding: 12px 16px;
+  border-bottom:1px solid #f3f3f3;
+}
+.avail-table .row.header{
+  position: sticky; top:0; background:#fff; z-index:1;
+  font-weight:700; color:#666;
+}
+.avail-table .col.zone{ font-weight:700; color:#111; }
+.avail-table .col.left{ text-align:right; font-weight:800; }
+.avail-table .col.arrow{ text-align:center; color:#999; }
+
+.avail-table .col.left.ok{ color:#15a915; }   /* เขียว */
+.avail-table .col.left.zero{ color:#d30000; } /* แดง */
+
+.avail-table .empty{
+  padding: 18px; text-align:center; color:#666;
 }
 
 
