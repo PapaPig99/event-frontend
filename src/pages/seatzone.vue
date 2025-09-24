@@ -6,7 +6,25 @@ import { useRouter, useRoute } from 'vue-router'
 const router = useRouter()
 const route  = useRoute()
 const routeId = computed(() => route.params.id)
-const goBack = () => router.back()
+const hasSeatmap = ref(false)
+// เดิม: const goBack = () => router.back()
+const goBack = () => {
+  const id = routeId.value
+  if (hasSeatmap.value) {
+    const eventLite = readEventLite(id)
+    router.replace({
+      name: 'concert-plan',
+      params: { id },
+      ...(eventLite ? { state: { eventLite } } : {})
+    })
+  } else {
+    router.push({ name: 'event-detail', params: { id } })
+  }
+}
+
+
+
+
 const selectedItems = computed(() =>
   zones.value
     .filter(z => z.qty > 0)
@@ -26,6 +44,7 @@ function goToPayment() {
     return
   }
 
+  
   const id = route.params.id
   const order = {
     eventId: id,
@@ -55,6 +74,23 @@ const selectedShow = ref('')
 /* ===== Stepper ===== */
 const currentStep = 2
 
+function readEventLite(id) {
+  // 1) จาก router state
+  const st = history.state?.eventLite
+  if (st && typeof st === 'object') return st
+
+  // 2) จาก sessionStorage (สำรอง)
+  try {
+    const raw = sessionStorage.getItem(`eventLite:${id}`)
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj
+    }
+  } catch {}
+  return null
+}
+
+
 /* ===== อ่าน plan payload จาก state / session ===== */
 function readPlan(id) {
   const st = history.state?.plan
@@ -80,6 +116,11 @@ onMounted(() => {
     shows.value       = Array.isArray(plan.shows) ? plan.shows : []
     selectedShow.value = plan.selectedShow || shows.value[0] || ''
   }
+
+  // 🔽 เพิ่ม: อ่าน eventLite เพื่อตัดสินว่ามีผังไหม
+  const lite = readEventLite(id)
+  const seatmapUrl = lite?.seatmapImageUrl || lite?.seatmap || ''
+  hasSeatmap.value = !!seatmapUrl && !/seatmap-fallback/i.test(seatmapUrl)
 
   // fallback รูป กันรูปหาย/ว่าง
   if (!poster.value)  poster.value  = fallbackPoster
@@ -363,6 +404,7 @@ const availRows = computed(() =>
 </section>
 
   </div>
+  
 </template>
 
 <style scoped>
