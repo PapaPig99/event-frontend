@@ -41,34 +41,54 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router' 
 // ปรับ path ให้ตรงที่คุณเก็บไฟล์จริง
 import logoSrc from '../assets/logo.png'
 
 const props = defineProps({ modelValue: { type: Boolean, default: false } })
-const emit = defineEmits(['update:modelValue', 'login', 'signup'])
+const emit = defineEmits(['update:modelValue', 'login', 'signup', 'authed'])
 
 const email = ref('')
 const password = ref('')
 const show = ref(false)
 const card = ref(null)
 
+const route = useRoute()
+const router = useRouter()
+
+function clearForm() {
+  email.value = ''
+  password.value = ''
+  show.value = false
+}
+
 function close() { emit('update:modelValue', false) }
 async function onSubmit() {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
+     body: JSON.stringify({ email: email.value, password: password.value })
   })
   const data = await res.json()
   if (res.ok && data.token) {
     localStorage.setItem('token', data.token)
-    const redirect = route.query.redirect || '/events'
-    emit('authed') 
-    router.replace(String(redirect))
+
+    // ยิงสัญญาณบอกว่ามีการเปลี่ยนแปลงการล็อกอิน
+    window.dispatchEvent(new CustomEvent('auth:changed', { detail: { token: data.token, action: 'login' } }))
+    emit('authed', data)
+
+    emit('update:modelValue', false)
+
+    clearForm()
+    const redirect = route.query.redirect || '/'
+    router.push(typeof redirect === 'string' ? redirect : '/')
+
   } else {
     alert(data.message || 'เกิดข้อผิดพลาด ไม่สามารถเข้าสู่ระบบได้')
   }
 }
+
+
 function trapFocus(e) {
   if (!props.modelValue || !card.value) return
   if (!card.value.contains(e.target)) card.value.focus()
@@ -78,12 +98,23 @@ onBeforeUnmount(() => document.removeEventListener('focusin', trapFocus))
 
 watch(() => props.modelValue, (open) => {
   if (open) {
+    clearForm()
     requestAnimationFrame(() => {
       const input = card.value?.querySelector('input[type="email"]')
       input?.focus()
     })
   }
 })
+
+function onAuthChanged(e) {
+  if (e?.detail?.action === 'logout') {
+    clearForm()
+  }
+}
+
+onMounted(() => window.addEventListener('auth:changed', onAuthChanged))
+onBeforeUnmount(() => window.removeEventListener('auth:changed', onAuthChanged))
+
 </script>
 
 <style scoped>

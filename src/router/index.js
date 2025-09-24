@@ -10,8 +10,11 @@ const routes = [
       { path: '', name: 'home', component: () => import('@/pages/AppHome.vue') },
       { path: 'event', name: 'event-list', component: () => import('@/pages/Event.vue') },
 
+      
+      { path: 'event/:id', name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
       // 🔒 ต้องล็อกอิน
-      { path: 'event/:id', name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true, meta: { requiresAuth: true } },
+      { path: 'events/:id', name: 'event-detail-alias', component: () => import('@/pages/Event-detail.vue'), props: true },
+      // 🔒 ต้องล็อกอินจริง ๆ เฉพาะ flow เข้าร่วม/เลือกที่นั่ง/งานของฉัน
       { path: 'event/:id/plan', name: 'concert-plan', component: () => import('@/pages/ConcertPlan.vue'), props: true, meta: { requiresAuth: true } },
       { path: 'event/:id/seat-zone', name: 'seat-zone', component: () => import('@/pages/seatzone.vue'), props: true, meta: { requiresAuth: true } },
       { path: 'myevent', name: 'my-event', component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
@@ -42,12 +45,17 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to) => {
-  if (to.meta.requiresAuth && !isAuthed()) {
-    // กลับหน้า Home และสั่งเปิดการ์ด Login ด้วย query `login=1`
-    return { name: 'home', query: { login: '1', redirect: to.fullPath } }
+const TOKEN_KEY = 'token'
+
+router.beforeEach((to, from, next) => {
+  if (to.meta?.requiresAuth) {
+    const hasToken = !!localStorage.getItem(TOKEN_KEY)
+    if (!hasToken) {
+      return next({ name: 'home', query: { login: '1', redirect: to.fullPath } })
+    }
   }
-  return true
+  next()
 })
+
 
 export default router
