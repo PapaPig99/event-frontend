@@ -1,6 +1,6 @@
 // src/router/index.ts  (หรือ .js ก็ได้)
 import { createRouter, createWebHistory } from 'vue-router'
-import { isAuthed } from '@/lib/auth'
+import { isAuthed, currentUser } from '@/lib/auth'
 
 const routes = [
   {
@@ -27,7 +27,7 @@ const routes = [
       {
         path: 'event/:id/payment',
         name: 'payment',
-        component: () => import('@/pages/payment.vue'), // ให้ชื่อไฟล์ตรงจริง (ตัวเล็ก/ใหญ่ด้วย)
+        component: () => import('@/pages/Payment.vue'), // ให้ชื่อไฟล์ตรงจริง (ตัวเล็ก/ใหญ่ด้วย).
         props: true,
         meta: { requiresAuth: true }
       },
@@ -38,11 +38,15 @@ const routes = [
       { path: '/login', name: 'login-virtual', beforeEnter: (to) => ({ name: 'home', query: { ...to.query, login: '1' } }) },
     ],
   },
+// --- Admin zone ---
 
   { path: '/admin/login', name: 'admin-login', component: () => import('@/pages/admin/Login.vue') },
+
   {
     path: '/admin',
     component: () => import('@/layouts/AdminLayout.vue'),
+    // ต้องล็อกอิน + ต้องเป็น ADMIN
+    meta: { requiresAuth: true, requiresRole: 'ADMIN', adminArea: true },
     children: [
       { path: '', redirect: '/admin/overview' },
       { path: 'overview', name: 'admin-overview', component: () => import('@/pages/admin/Overview.vue') },
@@ -52,6 +56,7 @@ const routes = [
       { path: 'events/:id/detail', name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue') },
     ],
   },
+
   { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/pages/NotFound.vue') },
 ]
 
@@ -62,17 +67,35 @@ const router = createRouter({
   routes,
 })
 
-const TOKEN_KEY = 'token'
+function userHasRole(required) {
+  const u = currentUser()
+  if (!u) return false
+  // รองรับทั้งกรณี role เป็น string เดี่ยว หรือ array จาก backend
+  if (Array.isArray(u.role)) return u.role.includes(required)
+  if (Array.isArray(u.roles)) return u.roles.includes(required)
+  return u.role === required
+}
 
 router.beforeEach((to, from, next) => {
-  if (to.meta?.requiresAuth) {
-    const hasToken = !!localStorage.getItem(TOKEN_KEY)
-    if (!hasToken) {
-      return next({ name: 'home', query: { login: '1', redirect: to.fullPath } })
+  // ต้องล็อกอิน?
+  if (to.meta?.requiresAuth && !isAuthed()) {
+    // แยกกรณี admin area กับ user area ให้เด้งไป login ที่เหมาะสม
+    if (to.meta?.adminArea) {
+      return next({ name: 'admin-login', query: { redirect: to.fullPath } })
+    }
+    return next({ name: 'home', query: { login: '1', redirect: to.fullPath } })
+  }
+
+  // ต้องมี role เฉพาะ?
+  if (to.meta?.requiresRole) {
+    const ok = userHasRole(to.meta.requiresRole)
+    if (!ok) {
+      // ถ้าเป็นโซนแอดมิน แต่ไม่ใช่ ADMIN → ส่งกลับบ้าน
+      return next({ name: 'home' })
     }
   }
+
   next()
 })
-
 
 export default router
