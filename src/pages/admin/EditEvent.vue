@@ -1,7 +1,53 @@
 <script setup>
-import { ref, reactive, onMounted, watch ,computed, onUnmounted} from 'vue'
+import { ref, reactive,nextTick, onMounted, watch ,computed, onUnmounted} from 'vue'
 import { useRoute } from 'vue-router'
 
+const showError = ref(false)
+const errors = ref([])
+const alertRef = ref<HTMLElement|null>(null)
+
+function validateForm() {
+  const errs = []
+
+  // ฟิลด์บังคับ
+  if (!form.poster && !form.posterUrl) errs.push('กรุณาอัปโหลดรูปโปสเตอร์')
+  if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
+  if (!form.category) errs.push('กรุณาเลือกหมวดหมู่')
+  if (!form.regOpen) errs.push('กรุณากรอกวันที่และเวลาเปิดจำหน่าย')
+  if (!form.saleNoEnd && !form.regClose) errs.push('กรุณากรอกวันที่และเวลาปิดจำหน่าย หรือเลือกปิดเมื่อบัตรหมด')
+  if (!form.startDate) errs.push('กรุณากรอกวันเริ่มจัดงาน')
+  if (!form.endDate) errs.push('กรุณากรอกวันสิ้นสุดงาน')
+  if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
+
+  // rounds (อย่างน้อย 1 และต้องมีเวลาเริ่ม)
+  if (!form.rounds?.length) {
+    errs.push('กรุณาเพิ่มรอบงานอย่างน้อย 1 รอบ')
+  } else {
+    form.rounds.forEach((r, idx) => {
+      if (!r.startTime) errs.push(`กรุณากรอกเวลาเริ่มของรอบที่ ${idx + 1}`)
+    })
+  }
+
+  // zones (อย่างน้อย 1 แถว + ชื่อ/จำนวน/ราคา)
+  if (!form.zones?.length) {
+    errs.push('กรุณาเพิ่มโซนอย่างน้อย 1 โซน')
+  } else {
+    form.zones.forEach((z, idx) => {
+      if (!z.zoneName?.trim()) errs.push(`กรุณากรอกชื่อโซนของแถวที่ ${idx + 1}`)
+      if (z.capacity == null || Number(z.capacity) <= 0) errs.push(`กรุณากรอกจำนวนที่นั่งของโซนแถวที่ ${idx + 1}`)
+      if (z.price == null || Number(z.price) < 0) errs.push(`กรุณากรอกราคาของโซนแถวที่ ${idx + 1}`)
+    })
+  }
+
+  errors.value = errs
+  showError.value = errs.length > 0
+  return errs.length === 0
+}
+
+async function scrollAlertIntoView() {
+  await nextTick()
+  alertRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 /* ---------- หุบ/ขยาย ---------- */
 const open = reactive({ event: true, description: true, sessions: true, zones: true })
 const toggle = key => (open[key] = !open[key])
@@ -122,7 +168,6 @@ const form = reactive({
 
   // sessions/rounds
   rounds: [],
-
   // zones
   zones: [],
 })
@@ -134,12 +179,14 @@ const saving = ref(false)
 
 const emptyRound = () => ({
   roundName: '',
-  startTime: '',
-  endTime: '',
-  maxAttendees: null,
-  price: null,
+  startTime: ''
 })
-
+const emptyZone = () => ({
+   zoneName: '',
+   capacity: '',
+   price:''
+  
+})
 // เติมวินาทีให้ 'YYYY-MM-DDTHH:mm' → '...:ss'
 function withSecDT(dt) {
   if (!dt) return null
@@ -172,7 +219,7 @@ onMounted(async () => {
     form.regOpen = thaiDateTimeToISOLocal(data.saleStartAt)
     form.saleNoEnd = !!data.saleUntilSoldout
     form.regClose = form.saleNoEnd ? '' : thaiDateTimeToISOLocal(data.saleEndAt)
-   form.gateOpen = data.doorOpenTime || ''
+    form.gateOpen = data.doorOpenTime || ''
 
     // รูปจาก API
     form.posterUrl   = data.posterImageUrl || null
@@ -185,10 +232,7 @@ onMounted(async () => {
       ? sessions.map(s => ({
           id: s.id ?? null,
           roundName: s.name ?? '',
-          startTime: (s.startTime || '').slice(0, 5),      // 'HH:mm:ss' -> 'HH:mm'
-          endTime: s.endTime ? s.endTime.slice(0, 5) : '',
-          maxAttendees: s.maxParticipants ?? null,
-          price: s.price ?? null
+          startTime: (s.startTime || '').slice(0, 5),     
         }))
       : [emptyRound()]
     multiRounds.value = form.rounds.length > 1
@@ -198,12 +242,12 @@ onMounted(async () => {
     form.zones = zones.length
       ? zones.map(z => ({
           id: z.id ?? null,
-          name: z.name ?? '',
+          zoneName: z.name ?? '',
           capacity: z.capacity ?? 0,
           price: z.price ?? 0
         }))
-      : []
-    multiZones.value = form.zones.length > 0
+      : [emptyZone()]
+    multiZones.value = form.zones.length > 1
   } catch (e) {
     console.error(e)
     alert('โหลดข้อมูลไม่สำเร็จ')
@@ -211,40 +255,6 @@ onMounted(async () => {
     loading.value = false
   }
 })
-/* ---------- บังคับให้กรอก ---------- */
-
-function validate() {
-  const errs = []
-
-  if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
-  if (!form.category)      errs.push('กรุณาเลือกหมวดหมู่')
-  if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
-  if (!form.startDate)     errs.push('กรุณากรอกวันที่เริ่ม')
-  if (!form.endDate)       errs.push('กรุณากรอกวันที่สิ้นสุด')
-
-  // 1) sale_start_at NOT NULL
-  if (!form.regOpen) errs.push('กรุณากรอกวัน-เวลาเปิดขาย (regOpen)')
-
-  // 2) poster_image_url NOT NULL (ถ้าไม่อัปไฟล์ใหม่ ต้องมี URL เดิม)
-  if (!form.poster && !form.posterUrl) errs.push('กรุณาใส่รูปโปสเตอร์')
-
-  // 3) sessions.start_time NOT NULL
-  const validSessions = (form.rounds || []).filter(r => !!r.startTime)
-  if (validSessions.length === 0) errs.push('กรุณากรอกอย่างน้อย 1 รอบ พร้อมเวลาเริ่ม (HH:mm)')
-
-  // 4) zones.name NOT NULL + unique ต่อ event
-  const filteredZones = (form.zones || []).filter(z => !!z.name?.trim())
-  const dupNames = new Set()
-  const dup = filteredZones.some(z => {
-    const key = z.name.trim()
-    if (dupNames.has(key)) return true
-    dupNames.add(key)
-    return false
-  })
-  if (dup) errs.push('โซนห้ามชื่อซ้ำกัน')
-
-  return errs
-}
 
 /* ---------- rounds ops ---------- */
 function onToggleMultiRounds(v) {
@@ -269,13 +279,23 @@ function removeRound(i) {
 }
 
 /* ---------- zones ops ---------- */
+function onToggleMultiZones(v) {
+  const val = typeof v === 'object' && v?.value !== undefined ? v.value : !!v
+  if (val) {
+    if (form.zones.length === 1) form.zones.push(emptyZone())
+  } else {
+    form.zones = [form.zones[0] ?? emptyZone()]
+  }
+}
+// ป้องกันกรณีลืมส่ง .value ใน template
+watch(multiZones, (val) => onToggleMultiZones(val))
 function addZone() {
-  form.zones.push({ name: '', capacity: 0, price: 0 })
-  multiZones.value = form.zones.length > 0
+  form.zones.push(emptyZone())
+  multiZones.value = form.zones.length > 1
 }
 function removeZone(i) {
   form.zones.splice(i, 1)
-  multiZones.value = form.zones.length > 0
+  multiZones.value = form.zones.length > 1
 }
 
 /* ---------- mapping form -> DTO (สำหรับ @RequestPart("data")) ---------- */
@@ -307,16 +327,14 @@ function buildDto() {
         id: r.id ?? null,
         name: r.roundName,
         startTime: withSec(r.startTime),
-        endTime: r.endTime ? withSec(r.endTime) : null,
         status: 'OPEN',
-        maxParticipants: r.maxAttendees ?? null,
-        price: r.price ?? null
       })),
 
     // zones
-    zones: (form.zones || []).map(z => ({
+    zones: (form.zones || [])
+      .map(z => ({
       id: z.id ?? null,
-      name: z.name,
+      name: z.zoneName,
       capacity: Number(z.capacity || 0),
       price: Number(z.price || 0)
     }))
@@ -327,12 +345,10 @@ async function save() {
   try {
     saving.value = true
 
-    // validate ก่อน
-    const errs = validate()
-    if (errs.length) {
-      alert(errs.join('\n'))
-      return
-    }
+     if (!validateForm()) {
+    await scrollAlertIntoView()
+    return
+  }
 
     const id = route.params.id
     const dto = buildDto()
@@ -366,10 +382,12 @@ async function save() {
 
 <template>
   <section class="edit-events">
-
+    
     <header class="toolbar">
+      <!-- กล่องแจ้งเตือน -->
 
       <div class="title">Edit event</div>
+      
     </header>
     <!-- ข้อมูลอีเวนต์ -->
     <section class="card">
@@ -404,13 +422,14 @@ async function save() {
           <div class="fields">
             <div class="row">
               <label>ชื่อ *</label>
-              <input class="inp" v-model="form.name" placeholder="เช่น NCT Reboot Live" />
+              <input class="inp"  :class="{ 'is-invalid': showError && !form.name?.trim() }"  v-model="form.name" placeholder="เช่น NCT Reboot Live" />
             </div>
 
             <div class="row two">
               <div>
                 <label>หมวดหมู่ *</label>
-                <select class="inp" v-model="form.category">
+                <select class="inp"  v-model="form.category"
+                 :class="{ 'is-invalid': showError && !form.category }">
                   <option value="">ยังไม่ได้เลือก</option>
                   <option value="concert">คอนเสิร์ต</option>
                   <option value="show">การแสดง</option>
@@ -437,14 +456,18 @@ async function save() {
               <div>
                 <label>วันที่และเวลาเปิดจำหน่าย *</label>
                 <div class="with-icon cal">
-                  <input class="inp" type="datetime-local" v-model="form.regOpen" />
+                  <input class="inp"  type="datetime-local" v-model="form.regOpen"
+                     :class="{ 'is-invalid': showError && !form.regOpen }" />
+
                 </div>
               </div>
               <div>
                 <label>วันที่และเวลาปิดจำหน่าย *</label>
                 <div class="inline">
                   <div class="with-icon cal grow">
-                    <input class="inp" type="datetime-local" v-model="form.regClose" :disabled="form.saleNoEnd" />
+                    <input class="inp"  type="datetime-local" v-model="form.regClose"
+                     :class="{ 'is-invalid': showError && !form.saleNoEnd && !form.regClose }"
+                     :disabled="form.saleNoEnd" />
                   </div>
                   <label class="ck"><input type="checkbox" v-model="form.saleNoEnd" /> ปิดเมื่อบัตรหมด</label>
                 </div>
@@ -455,13 +478,15 @@ async function save() {
               <div>
                 <label>วันเริ่มจัดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp" type="date" v-model="form.startDate" />
+                  <input class="inp"    :class="{ 'is-invalid': showError && !form.startDate }"  
+                  type="date" v-model="form.startDate" />
                 </div>
               </div>
               <div>
                 <label>วันสิ้นสุดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp" type="date" v-model="form.endDate" />
+                  <input class="inp"  :class="{ 'is-invalid': showError && !form.endDate }"
+                   type="date" v-model="form.endDate" />
                 </div>
               </div>
             </div>
@@ -470,13 +495,15 @@ async function save() {
               <div>
                 <label>ที่ตั้ง *</label>
                 <div class="with-icon loc">
-                  <input class="inp" v-model="form.venue" placeholder="เช่น Impact Arena, Hall 9" />
+                  <input class="inp"  :class="{ 'is-invalid': showError && !form.venue?.trim() }" 
+                  v-model="form.venue" placeholder="เช่น Impact Arena, Hall 9" />
                 </div>
               </div>
               <div>
                 <label>เวลาประตูเปิด *</label>
                 <div class="with-icon time">
-                  <input class="inp" v-model="form.gateOpen" placeholder="เช่น 17:00" />
+                  <input class="inp"   :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }" 
+                  v-model="form.gateOpen" placeholder="เช่น 17:00" />
                 </div>
               </div>
             </div>
@@ -498,7 +525,7 @@ async function save() {
       <div class="card-body">
         <div class="stack">
           <div class="row">
-            <label>คำอธิบาย *</label>
+            <label>คำอธิบาย</label>
             <textarea class="inp" rows="4" v-model="form.description" placeholder="เล่ารายละเอียดเกี่ยวกับงาน" />
           </div>
 
@@ -542,16 +569,15 @@ async function save() {
 
       </header>
       <div v-show="open.zone" class="card-body">
-
-      <div class="card-body">
+        <div class="card-body">
         <div class="pill-row">
           <label class="pill">
-            <input type="checkbox" v-model="multiZones" />
+            <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)"/>
             มีหลายโซน
           </label>
         </div>
-
-        <div v-if="multiZones" class="zones">
+          
+         <div class="zones" v-if="form.zones.length" >
           <div class="zones-head">
             <div>ชื่อโซน</div>
             <div>จำนวนที่นั่ง</div>
@@ -560,15 +586,23 @@ async function save() {
           </div>
 
           <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
-            <input class="inp" v-model="z.name" placeholder="เช่น Zone A" />
-            <input class="inp num" type="number" min="0" v-model.number="z.capacity" />
-            <input class="inp num" type="number" min="0" step="100" v-model.number="z.price" />
-            <button class="zone-del" type="button" @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+            <input class="inp" v-model="z.zoneName" 
+            :class="{ 'is-invalid': showError && !z.zoneName?.trim() }"
+            placeholder="เช่น Zone A" required/>
+
+            <input class="inp num" type="number" min="0" v-model.number="z.capacity"
+            :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }" />
+            
+            <input class="inp num" type="number" min="0" step="100" v-model.number="z.price"  
+            :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }" />
+      
+            <button class="del" type="button" v-if="multiZones && form.zones.length > 1 && i !== 0"
+            @click="removeZone(i)" aria-label="ลบโซน">✕</button>
           </div>
 
-          <button class="addbar mt-3" type="button" @click="addZone()">+ เพิ่มโซน</button>
+          <button class="addbar mt-3" type="button"v-if="multiZones" @click="addZone()">+ เพิ่มโซน</button>
         </div>
-      </div>
+        </div>
        </div>
     </section>
 
@@ -593,20 +627,16 @@ async function save() {
           <div class="rounds-head">
             <div>ชื่อรอบ</div>
             <div>เวลาเริ่ม</div>
-            <div>เวลาจบ</div>
-            <div>ผู้เข้าร่วมสูงสุด(ไม่แบ่งzone)</div>
-            <div>ราคา(ไม่แบ่งzone)</div>
             <div></div>
           </div>
 
           <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
             <input class="inp" v-model="r.roundName"
+              :class="{ 'is-invalid': showError && !r.roundName?.trim() }"
               :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
-            <input class="inp" type="time" v-model="r.startTime" required />
-            <input class="inp" type="time" v-model="r.endTime" />
-            <input class="inp num" type="number" min="0" v-model.number="r.maxAttendees" />
-            <input class="inp num" type="number" min="0" v-model.number="r.price" />
-
+            <input class="inp" :class="{ 'is-invalid': showError && !r.startTime }"
+            type="time" v-model="r.startTime" required />
+      
             <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
               @click="removeRound(i)" aria-label="ลบรอบ">✕</button>
           </div>
@@ -616,7 +646,18 @@ async function save() {
       </div>
        </div>
     </section>
-
+      <div
+  v-if="showError"
+  ref="alertRef"
+  class="alert error"
+  role="alert"
+  aria-live="assertive"
+>
+  <div class="alert-title">กรุณากรอกข้อมูลให้ครบถ้วน</div>
+  <ul class="alert-list">
+    <li v-for="(msg, i) in errors" :key="i">{{ msg }}</li>
+  </ul>
+</div>
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
       <button class="btn primary" @click="save()">บันทึก</button>
@@ -802,26 +843,26 @@ button.chev {
 /* Zone*/
 
 /* หัวตาราง */
-.zones-head {
-  display: grid;
-  grid-template-columns: 1.4fr .6fr .8fr 40px;
-  /* ชื่อ / จำนวน / ราคา / ปุ่มลบ */
-  gap: 12px;
-  margin-bottom: 8px;
-  color: #0b0f1a;
-}
-
-/* แถวโซน */
+.zones-head,
 .zone-row {
   display: grid;
-  grid-template-columns: 1.4fr .6fr .8fr 40px;
+  grid-template-columns: 2fr 1fr 1fr 28px;  
   gap: 12px;
   align-items: center;
+}
+
+/* แถวโซน สไตล์ให้ match rounds */
+.zone-row {
   background: #f6f7f9;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
+}
+
+.zones.is-single .zones-head,
+.zones.is-single .zone-row {
+  grid-template-columns: 2fr 1fr 1fr; 
 }
 
 /* ปุ่มลบกากบาทแดงด้านขวา */
@@ -847,7 +888,7 @@ button.chev {
 .rounds-head,
 .round-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 28px;
+  grid-template-columns: 2fr 1fr 28px;
   gap: 12px;
   align-items: center;
 }
@@ -1138,4 +1179,23 @@ button.chev {
   gap: 10px;
   margin-top: 14px;
 }
+/* ผู้ใช้ไม่กรอก*/
+.inp.is-invalid {
+  border-color: #e0424a;
+}
+/* กล่องแจ้งเตือน */
+.alert {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+
+.alert.error {
+  background: #fff7f7;
+  border-color: #fecaca;
+  color: #7f1d1d;
+  position: relative;
+}
+
+
 </style>

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import api from '@/lib/api'   // ใช้ axios instance ที่แนบ JWT ให้เอง
+import api from '@/lib/api'
 
 /* ========= state ========= */
 const route = useRoute()
@@ -20,39 +20,16 @@ const event = ref({
   seatmap: '',
 })
 
-function goToConcertPlan() {
-  const id = route.params.id
-
-  // เก็บข้อมูลย่อจากหน้า detail (ใส่เท่าที่มี)
-  const eventLite = {
-    id,
-    title: event.value.title,
-    posterImageUrl: event.value.poster,
-    seatmapImageUrl: event.value.seatmap,
-    startDateRaw: route.params.startDate || undefined, // ถ้ามี
-    location: event.value.venueText,
-    doorOpenTime: event.value.timeText?.replace(' น.','') || undefined
-  }
-
-  // ส่งผ่าน state
-  router.push({
-    name: 'concert-plan',
-    params: { id },
-    state: { eventLite }
-  })
-
-  // กันพลาด: เก็บลง sessionStorage
-  sessionStorage.setItem(`eventLite:${id}`, JSON.stringify(eventLite))
-}
-
-
-/* ========= รูป fallback =========
-   ถ้าไม่มีไฟล์ใน src/assets ให้ย้ายไปโฟลเดอร์ /public และเปลี่ยนเป็น '/poster-fallback.jpg'
-*/
+/* ========= รูป fallback ========= */
 const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
 const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
 
-/* ========= โหลดจาก API (ต้องแนบ JWT) ========= */
+/* ========= มีผังหรือไม่ ========= */
+const hasSeatmap = computed(() =>
+  !!event.value.seatmap && event.value.seatmap !== fallbackSeatmap
+)
+
+/* ========= โหลดจาก API ========= */
 onMounted(async () => {
   loading.value = true; err.value = ''
   try {
@@ -81,12 +58,6 @@ onMounted(async () => {
 })
 
 
-/* ========= ปุ่ม/การนำทาง ========= */
-// function goToConcertPlan() {
-//   // route นี้ถูกตั้ง meta.requiresAuth แล้ว ถ้าไม่ได้ล็อกอิน guard จะพากลับเอง
-//   const id = route.params.id
-//   router.push({ name: 'concert-plan', params: { id } })
-// }
 
 /* ========= utils ========= */
 function fmtThaiDate(iso) {
@@ -146,6 +117,36 @@ function scrollToStage() {
   const y = el.getBoundingClientRect().top + window.pageYOffset - 80
   window.scrollTo({ top: y, behavior: 'smooth' })
 }
+
+
+
+
+
+
+/* ========= ไปหน้าเลือกแผน/ประเภทบัตร ========= */
+function goToConcertPlan() {
+  const id = route.params.id
+
+  // เก็บข้อมูลย่อส่งต่อไปหน้า ConcertPlan (ใส่เท่าที่มีจากหน้านี้)
+  const eventLite = {
+    id,
+    title: event.value.title,
+    posterImageUrl: event.value.poster,
+    seatmapImageUrl: event.value.seatmap,
+    // ถ้าอยากส่งเวลาแบบดิบ ให้ลอกจาก API ฝั่ง ConcertPlan; ที่นี่มีเฉพาะข้อความแสดงผล
+    location: event.value.venueText,
+    doorOpenTime: event.value.timeText?.replace(' น.','') || undefined
+  }
+
+  // ส่งผ่าน router state และกันพลาดเก็บไว้ใน sessionStorage
+  router.push({
+    name: 'concert-plan',
+    params: { id },
+    state: { eventLite }
+  })
+  sessionStorage.setItem(`eventLite:${id}`, JSON.stringify(eventLite))
+}
+
 </script>
 
 
@@ -217,42 +218,57 @@ function scrollToStage() {
       </div>
     </section>
 
-    <!-- ผังการแสดง & รอบการแสดง -->
-    <section class="stage" ref="stageSection" id="stage-section">
-      <div class="container">
-        <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
+   <!-- ผังการแสดง & รอบการแสดง -->
+<section class="stage" ref="stageSection" id="stage-section">
+  <div class="container">
+    <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
 
-        <div class="stage-card">
-  <img :src="event.seatmap" alt="Seat map" class="seatmap" @click="openSeatmap" />
-  <div class="stage-info">
-    <div class="venue-line">
-      <svg viewBox="0 0 24 24" class="ic">
-        <path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
-      </svg>
-      <span>{{ event.venueText }}</span>
-    </div>
+    <div class="stage-card" :class="{ 'noimg': !hasSeatmap }">
+      <!-- ซ้าย: รูปผัง (เฉพาะมีผัง) -->
+      <img
+        v-if="hasSeatmap"
+        :src="event.seatmap"
+        alt="Seat map"
+        class="seatmap"
+        @click="openSeatmap"
+      />
 
+      <!-- ขวา: ข้อมูลหลัก -->
+      <div class="stage-info">
+        <div v-if="!hasSeatmap" class="no-seatmap-banner">งานนี้ไม่ได้ระบุผัง</div>
 
+        <div class="venue-line">
+          <svg viewBox="0 0 24 24" class="ic">
+            <path d="M12 2C8.14 2 5 5.14 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.86-3.14-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+          </svg>
+          <span>{{ event.venueText }}</span>
+        </div>
 
-            <div class="stage-price">
-              <span class="muted">ราคาบัตร</span>
-              <span class="price-text">{{ event.priceText }}</span>
-            </div>
+        <div class="stage-price">
+          <span class="muted">ราคาบัตร</span>
+          <span class="price-text">{{ event.priceText }}</span>
+        </div>
+      </div>
 
-            <div class="date-buy">
-              <div class="date-chip">
-                <div class="chip-label">วันที่แสดง</div>
-                <div class="chip-val">{{ event.dateText }}</div>
-              </div>
-              <button class="buy-btn" @click="goToConcertPlan">ซื้อตั๋ว</button>
-
-            </div>
+      <!-- ตารางวันที่/เวลา: ย้ายออกมาเป็นพี่น้องของ stage-info -->
+      <div class="date-table">
+        <div class="dt-row dt-header">
+          <div class="dt-col">วันที่แสดง</div>
+          <div class="dt-col right">เวลา</div>
+        </div>
+        <div class="dt-row dt-body">
+          <div class="dt-col">{{ event.dateText }}</div>
+          <div class="dt-col right">
+            <button class="time-pill" @click="goToConcertPlan">
+              {{ event.timeText || '—' }}
+            </button>
           </div>
         </div>
       </div>
-    </section>
-
-    <!-- รายละเอียด -->
+    </div>
+  </div>
+</section>
+<!-- รายละเอียด -->
     <section id="desc" class="desc">
   <div class="container">
     <h2 class="section-title">รายละเอียด</h2>
@@ -260,20 +276,146 @@ function scrollToStage() {
     <p>จำหน่ายบัตร</p>
   </div>
 </section>
+<!-- โมดัลซูมผัง (ถ้ามี) -->
+<div v-if="isSeatmapOpen && hasSeatmap" class="modal-backdrop" @click.self="closeSeatmap">
+  <div class="modal-content">
+    <button class="modal-close" @click="closeSeatmap">×</button>
+    <img :src="seatmapLarge" alt="Seat map large" class="modal-img" />
+  </div>
+</div>
 
-
-    <!-- Modal -->
-    <div v-if="isSeatmapOpen" class="modal-backdrop" @click.self="closeSeatmap">
-      <div class="modal-content">
-        <button class="modal-close" @click="closeSeatmap">×</button>
-        <img :src="seatmapLarge" alt="Seat map large" class="modal-img" />
-      </div>
-    </div>
   </div>
 </template>
 
 <!-- ===== Global minimal reset (กัน Vite บีบ #app) ===== -->
 <style>
+
+/* ===== Date/Time table inside black stage card ===== */
+.date-table{
+  margin-top: 8px;
+  border-radius: 12px;
+  overflow: hidden;               /* ให้หัว/ตัวตารางโค้งต่อกัน */
+  box-shadow: 0 8px 18px rgba(0,0,0,.25);
+}
+
+.dt-row{
+  display: grid;
+  grid-template-columns: 1fr 140px; /* ซ้าย: วันที่ (ยืด), ขวา: เวลา (กว้างคงที่) */
+  align-items: center;
+}
+
+.dt-header{
+  background: #4b5563d8;            /* เทาเข้มตามภาพ */
+  color: #fff;
+  font-weight: 800;
+  padding: 10px 14px;
+}
+
+.dt-body{
+  background: #ffffff;
+  color: #111;
+  padding: 10px 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.dt-col.right{
+  text-align: right;
+}
+
+/* ปุ่มเวลาแดง (เม็ดกลมขวา) */
+.time-pill{
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color: #fff;
+  font-weight: 900;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+}
+
+/* ไม่มีผัง */
+/* การ์ดผังพื้นดำ (ของเดิม) */
+/* การ์ดผังพื้นดำ */
+.stage-card{
+  background:#000;
+  color:#fff;
+  border-radius:14px;
+  padding:16px;
+  display:grid;
+  grid-template-columns: 280px 1fr; /* ซ้ายผัง / ขวาข้อมูล */
+  gap:20px;
+  box-shadow:0 10px 24px rgba(0,0,0,.25);
+  align-items:start;
+}
+
+/* ถ้าไม่มีผัง → เป็นคอลัมน์เดียว */
+.stage-card.noimg{
+  grid-template-columns: 1fr;
+}
+
+/* ข้อมูลฝั่งขวา */
+.stage-info{
+  display:grid;
+  gap:12px;
+}
+
+/* ตารางวันที่/เวลา: ให้กินเต็มแถว (ทั้งการ์ด) */
+.stage-card .date-table{
+  grid-column: 1 / -1;    /* ← สำคัญ: span ทั้งกริด */
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(0,0,0,.25);
+}
+
+/* โครงตาราง */
+.dt-row{
+  display:grid;
+  grid-template-columns: 1fr 140px;
+  align-items:center;
+}
+.dt-header{
+  background:#4b5563d8; color:#fff; font-weight:800; padding:10px 14px;
+}
+.dt-body{
+  background:#fff; color:#111; padding:10px 14px; border-top:1px solid #e5e7eb;
+}
+.dt-col.right{ text-align:right; }
+
+/* ปุ่มเวลา */
+.time-pill{
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color:#fff; font-weight:900; border:none; border-radius:999px;
+  padding:10px 18px; cursor:pointer;
+  box-shadow:0 6px 14px rgba(255,106,19,.25);
+}
+
+/* ป้าย "ไม่มีผัง" */
+.no-seatmap-banner{
+  background:#f1f5f9; color:#0f172a;
+  border:1px dashed #cbd5e1;
+  border-radius:10px; padding:8px 12px; font-weight:700; margin-bottom:8px;
+}
+
+/* รูปผัง */
+.seatmap{
+  width:100%; height:170px; object-fit:cover; border-radius:8px; background:#1f2937;
+}
+
+/* จอเล็ก */
+@media (max-width: 980px){
+  .stage-card{ grid-template-columns: 1fr; }
+}
+
+
+
+
+/* ปรับระยะบน/ล่างในการ์ด */
+.stage-card .date-table{ margin-top: 10px; }
+
+
 :root{ --orange:#ff6a13; --red:#ff3d00; --ink:#0f172a; --muted:#6b7280; }
 body { margin: 0; }
 #app { max-width: none; padding: 0; }
@@ -400,6 +542,7 @@ body { margin: 0; }
   gap: 20px;
   box-shadow: 0 10px 24px rgba(0,0,0,.25);
 }
+
 
 /* HERO (พื้นหลังไล่สี) ให้ตัวหนังสือเป็น “ดำ” */
 .hero .price-box .price-text {

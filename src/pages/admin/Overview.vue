@@ -166,8 +166,16 @@ const addBtn = {
 const addBtnPlus = { width: "20px", lineHeight: "20px", textAlign: "center", fontSize: "20px", fontWeight: 800 };
 
 /* Surface */
-const surface = { background: color.card, borderRadius:"16px", boxShadow: shadowMd,
-  padding:"26px 26px 34px", maxWidth:"1040px", margin:"0 auto" };
+const surface = { 
+  background: color.card, 
+  borderRadius:"16px", 
+  boxShadow: shadowMd,
+  padding:"26px 26px 80px",
+  width:"100%",          
+  maxWidth:"2000px",      
+  margin:"0 auto"       
+};
+
 
 /* KPI */
 const kpiRow = { display:"flex", gap:"22px", marginBottom:"24px", flexWrap:"wrap" };

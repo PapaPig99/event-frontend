@@ -10,7 +10,7 @@ const routes = [
       { path: '', name: 'home', component: () => import('@/pages/AppHome.vue') },
       { path: 'event', name: 'event-list', component: () => import('@/pages/Event.vue') },
 
-      
+
       { path: 'event/:id', name: 'event-detail', component: () => import('@/pages/Event-detail.vue'), props: true },
       // 🔒 ต้องล็อกอิน
       { path: 'events/:id', name: 'event-detail-alias', component: () => import('@/pages/Event-detail.vue'), props: true },
@@ -20,11 +20,26 @@ const routes = [
       { path: 'myevent', name: 'my-event', component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
 
       { path: 'help', name: 'help', component: () => import('@/pages/Help.vue') },
-      { path: '/login', name: 'login-virtual', beforeEnter: (to) => { return { name: 'home', query: { ...to.query, login: '1' } }}
-},
+      {
+        path: '/login', name: 'login-virtual', beforeEnter: (to) => { return { name: 'home', query: { ...to.query, login: '1' } } }
+      },
+
+      {
+        path: 'event/:id/payment',
+        name: 'payment',
+        component: () => import('@/pages/Payment.vue'), // ให้ชื่อไฟล์ตรงจริง (ตัวเล็ก/ใหญ่ด้วย).
+        props: true,
+        meta: { requiresAuth: true }
+      },
+
+      { path: 'myevent', name: 'my-event', component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
+
+      { path: 'help', name: 'help', component: () => import('@/pages/Help.vue') },
+      { path: '/login', name: 'login-virtual', beforeEnter: (to) => ({ name: 'home', query: { ...to.query, login: '1' } }) },
     ],
   },
 // --- Admin zone ---
+
   { path: '/admin/login', name: 'admin-login', component: () => import('@/pages/admin/Login.vue') },
 
   {
@@ -44,6 +59,8 @@ const routes = [
 
   { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/pages/NotFound.vue') },
 ]
+
+
 
 const router = createRouter({
   history: createWebHistory(),

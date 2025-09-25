@@ -1,10 +1,59 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, nextTick } from 'vue'
 
 // หุบ/ขยาย
 const open = reactive({ event: true, description: true, sessions: true, zones: true })
 const toggle = key => (open[key] = !open[key])
 
+
+/* ---------- ตรวจข้อมูลที่จำเป็น  ---------- */
+
+const showError = ref(false)
+const errors = ref([])
+const alertRef = ref<HTMLElement|null>(null)
+
+function validateForm() {
+  const errs = []
+
+  // ฟิลด์บังคับ
+  if (!form.poster && !form.posterUrl) errs.push('กรุณาอัปโหลดรูปโปสเตอร์')
+  if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
+  if (!form.category) errs.push('กรุณาเลือกหมวดหมู่')
+  if (!form.regOpen) errs.push('กรุณากรอกวันที่และเวลาเปิดจำหน่าย')
+  if (!form.saleNoEnd && !form.regClose) errs.push('กรุณากรอกวันที่และเวลาปิดจำหน่าย หรือเลือกปิดเมื่อบัตรหมด')
+  if (!form.startDate) errs.push('กรุณากรอกวันเริ่มจัดงาน')
+  if (!form.endDate) errs.push('กรุณากรอกวันสิ้นสุดงาน')
+  if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
+
+  // rounds (อย่างน้อย 1 และต้องมีเวลาเริ่ม)
+  if (!form.rounds?.length) {
+    errs.push('กรุณาเพิ่มรอบงานอย่างน้อย 1 รอบ')
+  } else {
+    form.rounds.forEach((r, idx) => {
+      if (!r.startTime) errs.push(`กรุณากรอกเวลาเริ่มของรอบที่ ${idx + 1}`)
+    })
+  }
+
+  // zones (อย่างน้อย 1 แถว + ชื่อ/จำนวน/ราคา)
+  if (!form.zones?.length) {
+    errs.push('กรุณาเพิ่มโซนอย่างน้อย 1 โซน')
+  } else {
+    form.zones.forEach((z, idx) => {
+      if (!z.name?.trim()) errs.push(`กรุณากรอกชื่อโซนของแถวที่ ${idx + 1}`)
+      if (z.capacity == null || Number(z.capacity) <= 0) errs.push(`กรุณากรอกจำนวนที่นั่งของโซนแถวที่ ${idx + 1}`)
+      if (z.price == null || Number(z.price) < 0) errs.push(`กรุณากรอกราคาของโซนแถวที่ ${idx + 1}`)
+    })
+  }
+
+  errors.value = errs
+  showError.value = errs.length > 0
+  return errs.length === 0
+}
+
+async function scrollAlertIntoView() {
+  await nextTick()
+  alertRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 /* ---------- form  ---------- */
 const form = reactive({
   // core fields
@@ -29,12 +78,14 @@ const form = reactive({
   seatmapUrl: null,
 
   // sessions/rounds
-  rounds: [
-    { id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null }
+ rounds: [
+    { id: null, roundName: '', startTime: '', status: 'OPEN' }
   ],
 
   // zones
-  zones: [{ id: null, name: '', capacity: 0, price: 0 }],
+  zones: [
+    { id: null, name: '', capacity: 0, price: 0 }
+  ],
 })
 
 /* ---------- upload handlers ---------- */
@@ -91,15 +142,12 @@ function buildDto() {
       id: r.id ?? null,
       name: r.roundName,
       startTime: withSec(r.startTime),
-      endTime: withSec(r.endTime),
       status: 'OPEN',
-      maxParticipants: r.maxAttendees ?? null,
-      price: r.price ?? null
     })),
 
     zones: form.zones.map(z => ({
       id: z.id ?? null,
-      name: z.name,
+      name: z.zoneName,
       capacity: Number(z.capacity || 0),
       price: Number(z.price || 0)
     }))
@@ -108,7 +156,11 @@ function buildDto() {
 
 /* ---------- submit: POST /api/events (multipart/form-data) ---------- */
 async function saveCreate() {
-  //ดูค่าฟอร์มก่อนสร้าง DTO
+   if (!validateForm()) {
+    await scrollAlertIntoView()
+    return
+  }
+  //ค่าฟอร์มก่อนสร้าง DTO
   console.log('FORM before buildDto =', JSON.parse(JSON.stringify(form)));
 
   //สร้าง DTO จากฟอร์ม
@@ -164,25 +216,28 @@ function onToggleMultiRounds(v) {
   }
 }
 function addRound() {
-  form.rounds.push({ id: null, roundName: '', startTime: '', endTime: '', maxAttendees: null, price: null })
+  form.rounds.push({ id: null, roundName: '', startTime: ''})
 }
 function removeRound(i) {
   if (form.rounds.length <= 1) return
   form.rounds.splice(i, 1)
 }
 
-const multiZones = ref(false)
 function onToggleMultiZones(v) {
   if (v) {
-    if (form.zones.length === 0) form.zones = [{ id: null, name: '', capacity: 0, price: 0 }]
+    if (form.zones.length === 0) form.zones.push({ id: null, zoneName: '', capacity: 0, price: 0 })
+    if (form.zones.length === 1) form.zones.push({ id: null, zoneName: '', capacity: 0, price: 0 })
   } else {
-    form.zones = []
+    form.zones = [form.zones[0] ?? { id: null, zoneName: '', capacity: 0, price: 0 }]
   }
 }
+
 function addZone() {
-  form.zones.push({ id: null, name: '', capacity: 0, price: 0 })
+  form.zones.push({ id: null, zoneName: '', capacity: 0, price: 0 })
 }
+
 function removeZone(i) {
+  if (form.zones.length <= 1) return
   form.zones.splice(i, 1)
 }
 
@@ -206,8 +261,8 @@ function clearSeat() {
   <section class="create-events">
 
     <header class="toolbar">
-
       <div class="title">Create event</div>
+      
     </header>
     <!-- ข้อมูลอีเวนต์ -->
     <section class="card">
@@ -244,14 +299,15 @@ function clearSeat() {
           <div class="fields">
             <div class="row">
               <label>ชื่อ *</label>
-              <input class="inp" v-model="form.name" placeholder="เช่น NCT Reboot Live" />
+              <input class="inp"  :class="{ 'is-invalid': showError && !form.name?.trim() }"v-model="form.name" placeholder="เช่น NCT Reboot Live" />
             </div>
 
             <div class="row two">
               <div>
                 <label>หมวดหมู่ *</label>
-                <select class="inp" v-model="form.category">
-                  <option value="">ยังไม่ได้เลือก</option>
+                <select class="inp" v-model="form.category"
+                 :class="{ 'is-invalid': showError && !form.category }">
+                  <option value="" >ยังไม่ได้เลือก</option>
                   <option value="concert">คอนเสิร์ต</option>
                   <option value="show">การแสดง</option>
                   <option value="education">การศึกษา</option>
@@ -278,14 +334,17 @@ function clearSeat() {
               <div>
                 <label>วันที่และเวลาเปิดจำหน่าย *</label>
                 <div class="with-icon cal">
-                  <input class="inp" type="datetime-local" v-model="form.regOpen" />
+                  <input class="inp" type="datetime-local" v-model="form.regOpen"
+                   :class="{ 'is-invalid': showError && !form.regOpen }" />
                 </div>
               </div>
               <div>
                 <label>วันที่และเวลาปิดจำหน่าย *</label>
                 <div class="inline">
                   <div class="with-icon cal grow">
-                    <input class="inp" type="datetime-local" v-model="form.regClose" :disabled="form.saleNoEnd" />
+                    <input class="inp" type="datetime-local" v-model="form.regClose"
+                     :class="{ 'is-invalid': showError && !form.saleNoEnd && !form.regClose }"
+                     :disabled="form.saleNoEnd" />
                   </div>
                   <label class="ck"><input type="checkbox" v-model="form.saleNoEnd" /> ปิดเมื่อบัตรหมด</label>
                 </div>
@@ -295,24 +354,32 @@ function clearSeat() {
             <div class="row two">
               <div>
                 <label>วันเริ่มจัดงาน *</label>
-                <div class="with-icon cal"><input class="inp" type="date" v-model="form.startDate" /></div>
+                <div class="with-icon cal">
+                  <input class="inp"  :class="{ 'is-invalid': showError && !form.startDate }" 
+                  type="date" v-model="form.startDate" /></div>
               </div>
               <div>
                 <label>วันสิ้นสุดงาน *</label>
-                <div class="with-icon cal"><input class="inp" type="date" v-model="form.endDate" /></div>
+                <div class="with-icon cal">
+                  <input class="inp"  :class="{ 'is-invalid': showError && !form.endDate }"
+                  type="date" v-model="form.endDate" /></div>
               </div>
             </div>
 
             <div class="row two">
               <div>
                 <label>ที่ตั้ง *</label>
-                <div class="with-icon loc"><input class="inp" v-model="form.venue"
+                <div class="with-icon loc">
+                  <input class="inp"  :class="{ 'is-invalid': showError && !form.venue?.trim() }"
+                  v-model="form.venue"
                     placeholder="เช่น Impact Arena, Hall 9" /></div>
               </div>
               <div>
                 <label>เวลาประตูเปิด *</label>
-                <div class="with-icon time"><input class="inp" v-model="form.gateOpen"
-                    placeholder="เช่น 17:00 , ก่อนเริ่มงาน 1 ชม." /></div>
+                <div class="with-icon time">
+                  <input class="inp" v-model="form.gateOpen"
+                     :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }" 
+                     placeholder="เช่น 17:00 , ก่อนเริ่มงาน 1 ชม." /></div>
               </div>
             </div>
           </div>
@@ -331,7 +398,7 @@ function clearSeat() {
         <div class="stack">
 
           <div class="row">
-            <label>คำอธิบาย *</label>
+            <label>คำอธิบาย</label>
             <textarea class="inp" v-model="form.description" rows="4"
               placeholder="เล่ารายละเอียดเกี่ยวกับงาน"></textarea>
           </div>
@@ -391,7 +458,7 @@ function clearSeat() {
           </label>
         </div>
 
-        <div v-if="multiZones" class="zones">
+        <div class="zones">
           <!-- หัวตาราง -->
           <div class="zones-head">
             <div>ชื่อโซน</div>
@@ -402,18 +469,24 @@ function clearSeat() {
 
           <!-- แถวข้อมูล -->
           <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
-            <input class="inp" v-model="z.name" placeholder="เช่น Zone A" />
-
-            <input class="inp num" type="number" min="0" v-model.number="z.capacity" />
-
-            <input class="inp num" type="number" min="0" step="100" v-model.number="z.price" />
-
-            <button class="del" type="button" @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+            <input class="inp" v-model="z.zoneName" 
+              :class="{ 'is-invalid': showError && !z.zoneName?.trim() }"
+              :placeholder="i === 0? 'เช่น Zone A':' เช่น Zone B'" required />
+            
+            <input class="inp num"  type="number" min="0" v-model.number="z.capacity" 
+            :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }" />
+             
+            
+             <input class="inp num" type="number" min="0" step="100" v-model.number="z.price"  
+             :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }" />
+             
+             <button class="del" type="button" v-if="multiZones && form.zones.length > 1 && i !== 0"
+            @click="removeZone(i)" aria-label="ลบโซน">✕</button>
           </div>
 
-          <button class="addbar mt-3" type="button" @click="addZone()">+ เพิ่มโซน</button>
+          <button class="addbar mt-3" type="button"v-if="multiZones" @click="addZone()">+ เพิ่มโซน</button>
         </div>
-      </div>
+        </div>
     </section>
 
 
@@ -437,24 +510,19 @@ function clearSeat() {
           <div class="rounds-head">
             <div>ชื่อรอบ</div>
             <div>เวลาเริ่ม</div>
-            <div>เวลาจบ</div>
-            <div>ผู้เข้าร่วมสูงสุด(ไม่แบ่งzone)</div>
-            <div>ราคา(ไม่แบ่งzone)</div>
             <div></div>
           </div>
 
           <!-- แถวข้อมูล -->
           <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
             <input class="inp" v-model="r.roundName"
+            :class="{ 'is-invalid': showError && !r.roundName?.trim() }"
               :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
 
-            <input class="inp" type="time" v-model="r.startTime" required />
-            <input class="inp" type="time" v-model="r.endTime" />
-
-            <input class="inp num" type="number" min="0" v-model.number="r.maxAttendees" />
-            <input class="inp num" type="number" min="0" v-model.number="r.price" />
-
-            <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
+            <input class="inp"  :class="{ 'is-invalid': showError && !r.startTime }"
+              type="time" v-model="r.startTime" required />
+            
+              <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
               @click="removeRound(i)" aria-label="ลบรอบ">✕</button>
           </div>
 
@@ -462,7 +530,18 @@ function clearSeat() {
         </div>
       </div>
     </section>
-
+  <div
+  v-if="showError"
+  ref="alertRef"
+  class="alert error"
+  role="alert"
+  aria-live="assertive"
+>
+  <div class="alert-title">กรุณากรอกข้อมูลให้ครบถ้วน</div>
+  <ul class="alert-list">
+    <li v-for="(msg, i) in errors" :key="i">{{ msg }}</li>
+  </ul>
+</div>
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
       <button class="btn primary" @click="saveCreate()">สร้าง</button>
@@ -641,28 +720,27 @@ button.chev {
 
 /* -----------*/
 /* Zone*/
-
 /* หัวตาราง */
-.zones-head {
-  display: grid;
-  grid-template-columns: 1.4fr .6fr .8fr 40px;
-  /* ชื่อ / จำนวน / ราคา / ปุ่มลบ */
-  gap: 12px;
-  margin-bottom: 8px;
-  color: #0b0f1a;
-}
-
-/* แถวโซน */
+.zones-head,
 .zone-row {
   display: grid;
-  grid-template-columns: 1.4fr .6fr .8fr 40px;
+  grid-template-columns: 2fr 1fr 1fr 28px;  
   gap: 12px;
   align-items: center;
+}
+
+/* แถวโซน สไตล์ให้ match rounds */
+.zone-row {
   background: #f6f7f9;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
+}
+
+.zones.is-single .zones-head,
+.zones.is-single .zone-row {
+  grid-template-columns: 2fr 1fr 1fr; 
 }
 
 /* ปุ่มลบกากบาทแดงด้านขวา */
@@ -688,7 +766,7 @@ button.chev {
 .rounds-head,
 .round-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr 28px;
+  grid-template-columns: 2fr 1fr 28px;
   gap: 12px;
   align-items: center;
 }
@@ -979,4 +1057,24 @@ button.chev {
   gap: 10px;
   margin-top: 14px;
 }
+/* ผู้ใช้ไม่กรอก*/
+.inp.is-invalid {
+  border-color: #e0424a;
+}
+/* กล่องแจ้งเตือน */
+.alert {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+
+.alert.error {
+  background: #fff7f7;
+  border-color: #fecaca;
+  color: #7f1d1d;
+  position: relative;
+}
+
+
+
 </style>
