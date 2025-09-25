@@ -58,7 +58,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { api } from "@/lib/api";
+import  api  from "@/lib/api";
 defineEmits(["add-event"]);
 
 /* ====== state ====== */
@@ -75,7 +75,7 @@ const totalSold   = ref(0);
 /* ====== fetch ====== */
 onMounted(async () => {
   try {
-    const { data } = await api.get("/api/dashboard/summary");
+    const { data } = await api.get("/dashboard/summary");
     // KPI
     activeCount.value = Number(data?.activeEvents ?? 0);
     totalSold.value   = Number(data?.ticketsSold ?? 0);
