@@ -1,36 +1,17 @@
 <!-- src/pages/admin/Overview.vue -->
 <template>
   <section class="overview-events">
-    <!-- Top row --> 
-    <!-- <div :style="topbar"> -->
-            <header class="toolbar">
-
+    <!-- Top bar -->
+    <header class="toolbar">
       <h2 class="title" :style="h2">Overview</h2>
-            </header>
-     <!--  <div :style="actions"> -->
-        <!-- Search -->
-        <!-- <div :style="searchBox">
-          <i class="fa fa-search" :style="iconMuted"></i>
-          <input v-model="q" type="text" placeholder="Search" :style="searchInput" />
-        </div> -->
+    </header>
 
-        <!-- Toggle -->
-        <!-- <div :style="toggleWrap" @click="onlyActive = !onlyActive" :title="'Show only active: ' + (onlyActive ? 'On' : 'Off')">
-          <div :style="[toggleTrack, onlyActive ? toggleTrackOn : {}]">
-            <div :style="[toggleDot, onlyActive ? toggleDotOn : {}]"></div>
-          </div>
-        </div> -->
-
-        <!-- Add Events -->
-        <!-- <button :style="addBtn" @click="$emit('add-event')">
-          <span :style="addBtnPlus">+</span>
-          <span>เพิ่มอีเวนต์</span>
-        </button>
-      </div>
-    </div> -->
+    <!-- Loading / Error -->
+    <div v-if="loading" style="padding:16px;">Loading…</div>
+    <div v-else-if="error" style="padding:16px;color:#d32f2f;">{{ error }}</div>
 
     <!-- Main surface -->
-    <div :style="surface">
+    <div v-else :style="surface">
       <!-- KPI Row -->
       <div :style="kpiRow">
         <div :style="[kpiBase, kpiGreen]">
@@ -63,7 +44,7 @@
 
           <div v-for="(r,i) in filteredRows" :key="i" :style="trow">
             <div>
-              <div :style="eventMain">{{ truncate(r.name, 18) }}</div>
+              <div :style="eventMain">{{ truncate(r.name, 24) }}</div>
               <div :style="eventSub">{{ r.sub }}</div>
             </div>
             <div :style="num">{{ format(r.capacity) }}</div>
@@ -72,38 +53,59 @@
         </div>
       </div>
     </div>
-
-    </section>
-
+  </section>
 </template>
 
 <script setup>
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
+import  api  from "@/lib/api";
 defineEmits(["add-event"]);
 
-/* ===== Demo data ===== */
-const rows = ref([
-  { name: "MARIAH CAREY",  sub: "Concert",  capacity: 2680, sold: 2110, active: true  },
-  { name: "ONE LUMPINEE",  sub: "Sport",    capacity: 1400, sold:  680, active: true  },
-  { name: "Old Fair 2024", sub: "Festival", capacity:  900, sold:    0, active: false },
-]);
+/* ====== state ====== */
+const rows = ref([]);           // ตาราง Sales Progress
+const q = ref("");              // ค้นหา (ยังไม่เปิด UI)
+const onlyActive = ref(false);  // toggle (ยังไม่เปิด UI)
+const loading = ref(true);
+const error = ref(null);
 
-const q = ref("");
-const onlyActive = ref(false);
+// KPI จาก backend
+const activeCount = ref(0);
+const totalSold   = ref(0);
 
+/* ====== fetch ====== */
+onMounted(async () => {
+  try {
+    const { data } = await api.get("/dashboard/summary");
+    // KPI
+    activeCount.value = Number(data?.activeEvents ?? 0);
+    totalSold.value   = Number(data?.ticketsSold ?? 0);
+    // ตาราง (map ให้ตรงกับ template เดิม)
+    rows.value = (data?.salesProgress ?? []).map(x => ({
+      name: x.title ?? "",
+      sub:  ((x.category ?? "") || "").replace(/^./, c => c.toUpperCase()),
+      capacity: Number(x.capacity ?? 0),
+      sold:     Number(x.sold ?? 0),
+      // active: ใส่ได้ถ้ามี status จาก backend
+    }));
+  } catch (e) {
+    error.value = e?.message ?? "Load failed";
+  } finally {
+    loading.value = false;
+  }
+});
+
+/* ====== computed ====== */
 const filteredRows = computed(() =>
   rows.value
     .filter(r => (!onlyActive.value || r.active))
     .filter(r => (q.value ? (r.name + " " + r.sub).toLowerCase().includes(q.value.toLowerCase()) : true))
 );
 
-const activeCount = computed(() => rows.value.filter(r => r.active).length);
-const totalSold   = computed(() => rows.value.reduce((a, b) => a + b.sold, 0));
+/* ====== helpers ====== */
+const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s);
+const format   = n => Number(n ?? 0).toLocaleString();
 
-const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-const format   = n => n.toLocaleString();
-
-/* ================= TOKENS ================= */
+/* ================= TOKENS / STYLES ================= */
 const color = {
   page:   "#f3f3f4",
   card:   "#ffffff",
@@ -121,22 +123,20 @@ const shadowSm = "0 4px 12px rgba(0,0,0,.08)";
 const shadowMd = "0 10px 24px rgba(0,0,0,.10)";
 const radius   = "12px";
 
-/* ================= STYLES ================= */
 const page = { background: color.page, minHeight: "100%", padding: "16px 18px 28px" };
 
 const topbar = { display:"flex", justifyContent:"space-between", alignItems:"center", maxWidth:"1040px", margin:"0 auto 10px" };
 const h2 = { margin:0, letterSpacing:".2px", color:"#3a3a3a" }; // ขนาด/น้ำหนักดูที่ .title ใน <style>
-
 const actions = { display:"flex", alignItems:"center", gap:"12px" };
 
-/* Search */
+/* Search (ยังไม่เปิด UI) */
 const searchBox = { display:"flex", alignItems:"center", gap:"8px", height:"40px", padding:"0 12px",
   background:"#fff", borderRadius:"12px", boxShadow: shadowMd };
 const iconMuted = { color:"#9aa3b2" };
 const searchInput = { width:"420px", maxWidth:"52vw", border:"none", outline:"none",
   background:"transparent", color:"#333", fontSize:"14px" };
 
-/* Toggle */
+/* Toggle (ยังไม่เปิด UI) */
 const toggleWrap = { cursor:"pointer" };
 const toggleTrack = { width:"36px", height:"20px", background:"#e7e9f3", borderRadius:"999px", position:"relative", transition:".18s" };
 const toggleTrackOn = { background: color.blueTrack };
@@ -144,26 +144,12 @@ const toggleDot = { position:"absolute", top:"2px", left:"2px", width:"16px", he
   borderRadius:"50%", background:"#fff", boxShadow:"0 2px 6px rgba(0,0,0,.18)", transition:".18s" };
 const toggleDotOn = { transform:"translateX(16px)", background: color.blue };
 
-/* Add button */
-const addBtn = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "10px",
-  height: "44px",
-  padding: "0 18px",
-  minWidth: "140px",
-  border: "none",
-  cursor: "pointer",
-  userSelect: "none",
-  borderRadius: "14px",
-  background: "#5563FF",
-  color: "#fff",
-  fontWeight: 700,
-  fontSize: "14px",
-  boxShadow: "0 8px 16px rgba(85,99,255,.25)",
-  transition: "filter .15s ease, transform .06s ease, box-shadow .2s ease",
-};
-const addBtnPlus = { width: "20px", lineHeight: "20px", textAlign: "center", fontSize: "20px", fontWeight: 800 };
+/* Add button (ยังไม่เปิด UI) */
+const addBtn = { display:"inline-flex", alignItems:"center", gap:"10px", height:"44px", padding:"0 18px",
+  minWidth:"140px", border:"none", cursor:"pointer", userSelect:"none", borderRadius:"14px",
+  background:"#5563FF", color:"#fff", fontWeight:700, fontSize:"14px",
+  boxShadow:"0 8px 16px rgba(85,99,255,.25)", transition:"filter .15s ease, transform .06s ease, box-shadow .2s ease" };
+const addBtnPlus = { width:"20px", lineHeight:"20px", textAlign:"center", fontSize:"20px", fontWeight:800 };
 
 /* Surface */
 const surface = { 
