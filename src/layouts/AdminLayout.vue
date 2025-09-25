@@ -62,12 +62,19 @@
     <!-------------- Header ----------------------->
     <header class="topbar">
       <div class="topbar-right">
-        <span class="user">
+        <span class="user" v-if="user">
           <img :src="avatar" alt="avatar" class="avatar" />
-          <span class="username">{{ username }}</span>
+          <span class="username">{{ user.name || user.email }}</span>
         </span>
-        <span class="sep"></span>
-        <button class="Login" @click="goLogin">Login</button>
+        <span class="sep" v-if="user"></span>
+
+        <!-- ถ้า login แล้ว = ปุ่ม Logout / ถ้าไม่ = ปุ่ม Login -->
+        <button
+          class="Login"
+          @click="user ? doLogout() : goLogin()"
+        >
+          {{ user ? 'Logout' : 'Login' }}
+        </button>
       </div>
     </header>
 
@@ -80,24 +87,30 @@
 
 <script setup>
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { reactive, computed, watchEffect } from 'vue'
+import { reactive, computed, watchEffect, ref, onMounted } from 'vue'
+import { currentUser, logout, isAuthed } from '@/lib/auth'
 
 import logo from '@/assets/logo.png'
 import avatar from '@/assets/Avatar.png'
 
-const username = 'Username'
 const route = useRoute()
 const router = useRouter()
+
+// สถานะผู้ใช้ปัจจุบัน (อ่านจาก localStorage)
+const user = ref(currentUser())
+
+// อัปเดต user เมื่อโหลดหน้า/หรือเมื่อมีการเปลี่ยนแปลงจากหน้าอื่น
+onMounted(() => { user.value = currentUser() })
+window.addEventListener('storage', () => { user.value = currentUser() }) // เผื่อเปิดหลายแท็บ
 
 // เปิด/ปิดเมนูย่อย
 const open = reactive({ events: false })
 
-// เส้นทางที่นับว่าอยู่ใต้ Events (ชื่อ route + path)
+// เส้นทางที่นับว่าอยู่ใต้ Events
 const EVENTS_CHILD_ROUTE_NAMES = ['admin-all-events', 'admin-create-event']
-const EVENTS_PATH_PREFIXES = ['/admin/events']            // prefix มาตรฐาน
-const EVENTS_EXTRA_PATHS   = ['/admin/create', '/admin/all'] // ถ้าโปรเจกต์มี path แบบนี้
+const EVENTS_PATH_PREFIXES = ['/admin/events']
+const EVENTS_EXTRA_PATHS   = ['/admin/create', '/admin/all']
 
-// Events จะ active ถ้า route ปัจจุบันอยู่ในกลุ่มนี้
 const isEventsActive = computed(() => {
   const byName  = typeof route.name === 'string' && EVENTS_CHILD_ROUTE_NAMES.includes(route.name)
   const byPref  = EVENTS_PATH_PREFIXES.some(p => route.path.startsWith(p))
@@ -105,10 +118,8 @@ const isEventsActive = computed(() => {
   return byName || byPref || byExact
 })
 
-// กางอัตโนมัติเมื่ออยู่หน้าลูกของ Events
 watchEffect(() => { open.events = isEventsActive.value })
 
-// ใช้กับลิงก์ทั่วไป/โดยชื่อ
 function isActive(target) {
   if (typeof target !== 'string') return false
   if (target.startsWith('/')) return route.path === target
@@ -116,7 +127,24 @@ function isActive(target) {
 }
 
 function goLogin() {
-  router.push('/admin/login')
+  router.push({ name: 'admin-login', query: { redirect: route.fullPath } })
+}
+
+function doLogout() {
+  // ล้างค่าที่ระบบใช้อยู่จริง ๆ
+  logout() // ลบ token + user จาก localStorage (ตาม lib/auth ของคุณ)
+  // กันตกค้างเผื่อเคยเก็บ 'auth'
+  localStorage.removeItem('auth')
+
+  // อัปเดต state ภายในหน้า
+  user.value = null
+
+  // ถ้าอยู่ใน /admin ให้เด้งไปหน้า login แอดมิน ไม่งั้นกลับหน้าแรก
+  if (route.fullPath.startsWith('/admin')) {
+    router.replace({ name: 'admin-login' })
+  } else {
+    router.replace({ name: 'home' })
+  }
 }
 </script>
 
@@ -148,51 +176,52 @@ html, body {
   background: #fff;
   border-right: 1px solid #eee;
   z-index: 40;
-  
 }
 
 .brand { padding: 18px 12px 20px; display: flex; justify-content: center; }
 .brand img { height: 60px; width: auto; display: block; }
 
+/* ===== Topbar (สวยขึ้นแต่ layout เดิม) ===== */
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
-  background: #FF3336; color: #fff; display: flex; align-items: center;
-  z-index: 30; box-shadow: 0 1px 6px rgba(0,0,0,.12); font-weight: 500;
+  background: #FF3336;
+  color: #fff; display: flex; align-items: center;
+  z-index: 30;
+  box-shadow: 0 2px 12px rgba(0,0,0,.12);
 }
 
 .topbar-right {
   margin-left: var(--sidebar-w);
-  display: flex; align-items: center; gap: 18px; padding: 0 24px;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 clamp(16px,3vw,24px);
   flex: 1; justify-content: flex-end;
 }
 
-.user { 
-  display: flex; 
-  align-items: 
-  center; gap: 10px;
-  font-size: 18px;
- }
-.avatar { 
-  width: 20px; 
-  height: 20px; 
-  border-radius: 50%; 
-  object-fit: cover; 
-  background: rgba(180, 30, 30, 0.25); }
-.username { font-weight: 400; opacity: .95; }
+.user { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,.6);
+  background: rgba(255,255,255,.18);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12) inset;
+}
+.username { font-weight: 600; opacity: .95; letter-spacing: .2px; }
 
-.sep { 
-  width: 2px; 
-  height: 22px; 
-  background: #fff; 
-  display: inline-block; }
+.sep { width: 1px; height: 24px; background: rgba(255,255,255,.6); display: inline-block; }
 
-.Login { 
-  font-size: 18px;
-  background: transparent; 
-  border: none; 
-  color: #fff; 
-  font-weight: 400; cursor: pointer; }
-.Login:hover { text-decoration: underline; }
+/* ===== ปุ่มบนท็อปบาร์ (Login/Logout) ===== */
+.Login {
+  font-size: 15px; font-weight: 600; letter-spacing: .2px;
+  padding: 6px 14px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.6);
+  background: rgba(255,255,255,.14); color: #fff;
+  cursor: pointer;
+  transition: transform .12s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.Login:hover { background: rgba(255,255,255,.28); border-color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.Login:active { transform: translateY(1px); }
+.Login:focus-visible { outline: 3px solid rgba(255,255,255,.7); outline-offset: 2px; }
+
 
 .content {
   padding-top: var(--header-h);
@@ -206,23 +235,15 @@ html, body {
 /* ===== Nav styles ===== */
 .nav { padding: 6px 0 18px; font-size: 18px; }
 
-.nav-item, .sub-item {
-  font-weight: 500; 
-  line-height: 1.1; 
-  letter-spacing: 0; 
-  color: var(--text);
-}
+.nav-item, .sub-item { font-weight: 500; line-height: 1.1; letter-spacing: 0; color: var(--text); }
 
 .nav-item {
-  width: 80%; 
-  display: flex; 
-  align-items: center; 
-  gap: 5px;
+  width: 80%;
+  display: flex; align-items: center; gap: 5px;
   padding: 10px 12px; text-decoration: none; border-left: 4px solid transparent;
   margin-left: 15px;
 }
 
-/* Overview Active*/
 .nav-item.active {
   color: #FF787A;
   background: var(--red-50);
@@ -231,8 +252,6 @@ html, body {
   font-weight: 700;
 }
 
-/* Events Active*/
-
 button.nav-item.is-button.active {
   color: #FF787A;
   background: var(--red-50);
@@ -240,40 +259,25 @@ button.nav-item.is-button.active {
   border-left-width: 5px;
   font-weight: 700;
   margin-left: 15px;
-  
 }
-button.nav-item.is-button.active .chev {
-  color: #FF3336;
-}
+button.nav-item.is-button.active .chev { color: #FF3336; }
+
 .nav-item.is-button {
-  background: none; 
-  border: 0; 
-  cursor: pointer; 
-  text-align: left; 
-  font-weight: 410;
-  font-size: 18px;
-  border-left: 4px solid transparent;
+  background: none; border: 0; cursor: pointer; text-align: left; font-weight: 410;
+  font-size: 18px; border-left: 4px solid transparent;
 }
 
 .icon { width: 20px; color: #6b7280; }
 .nav-item.active .icon { color: #FF787A; }
 
-/* Submenu */
 .submenu { margin-left: 20px; margin-top: 6px; }
 
 .sub-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 12px; 
-  text-decoration: none;
-  font-size: 15px;
-  color:#999999;
+  padding: 8px 12px; text-decoration: none; font-size: 15px; color:#999999;
 }
-.sub-item.active {
-  color:#FF3336;
-}
+.sub-item.active { color:#FF3336; }
 
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #c1c7cf; }
 .dot.on { background: var(--red); }
-
-
 </style>

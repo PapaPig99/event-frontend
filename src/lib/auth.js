@@ -29,3 +29,8 @@ export function currentUser() {
   try { return JSON.parse(localStorage.getItem('user') || 'null'); }
   catch { return null; }
 }
+
+export function hasRole(roleCode) {
+  const user = currentUser();
+  return user && user.roles && user.roles.includes(roleCode);
+}

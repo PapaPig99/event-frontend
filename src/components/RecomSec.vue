@@ -36,7 +36,7 @@ const filtered = computed(() => {
     <div class="row-rec">
       <div class="section-header">
         <h2>{{ title }}</h2>
-        <a href="#" class="more">เพิ่มเติม</a>
+        <a href="/event" class="more">เพิ่มเติม</a>
       </div>
 
       <div class="scroll-viewport" v-if="filtered.length">

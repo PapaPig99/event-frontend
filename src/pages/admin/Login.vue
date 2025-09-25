@@ -1,3 +1,42 @@
+<script setup>
+import { ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import logo from '@/assets/logo.png'
+
+const username = ref('')
+const password = ref('')
+const showPassword = ref(false)
+const router = useRouter()
+const route = useRoute()
+
+const togglePassword = () => { showPassword.value = !showPassword.value }
+
+async function handleLogin(){
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email: username.value, password: password.value })
+    })
+    if(!res.ok) throw new Error('Login failed')
+    const data = await res.json() // { token, role: "ADMIN", email, name, userId }
+
+    // ✅ เก็บให้ตรงกับ lib/auth และ axios interceptor
+    localStorage.setItem('token', data.token)
+    localStorage.setItem('user', JSON.stringify(data))
+    // จะเก็บเพิ่ม 'auth' ไว้ก็ได้ แต่ไม่จำเป็น:
+    // localStorage.setItem('auth', JSON.stringify(data))
+
+    // ✅ ตัดสินใจ redirect
+    const isAdmin = data.role === 'ADMIN' || (Array.isArray(data.roles) && data.roles.includes('ADMIN'))
+    const redirectTo = route.query.redirect || (isAdmin ? '/admin' : '/')
+    router.replace(typeof redirectTo === 'string' ? redirectTo : '/')
+  } catch (e) {
+    alert('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+  }
+}
+</script>
+
 <template>
   <div class="login-page">
     <div class="login-card">
@@ -34,17 +73,6 @@
   </div>
 </template>
 
-<script setup>
-import { ref } from 'vue'
-import logo from '@/assets/logo.png'  
-
-const username = ref('')
-const password = ref('')
-const showPassword = ref(false)
-
-const togglePassword = () => { showPassword.value = !showPassword.value }
-const handleLogin = () => { alert(`เข้าสู่ระบบด้วย: ${username.value}`) }
-</script>
 
 <style scoped>
 .login-page{display:flex;justify-content:center;align-items:center;height:100vh;background:linear-gradient(135deg,#ff5f5f,#ff6f47)}
