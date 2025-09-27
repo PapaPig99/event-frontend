@@ -1,14 +1,11 @@
-// cypress.config.js (CommonJS)
-const { defineConfig } = require('cypress')
+// event-frontend/cypress.config.js
+import { defineConfig } from "cypress";
 
-module.exports = defineConfig({
+export default defineConfig({
   e2e: {
-    // ใช้ env ถ้ามี, ไม่งั้นค่า local เดิม
-    baseUrl: process.env.CYPRESS_baseUrl || 'http://localhost:5173',
-
-    // ตัดตัวอย่าง default ของ Cypress ออกจากการรัน
-    excludeSpecPattern: process.env.CI
-      ? ['**/1-getting-started/**', '**/2-advanced-examples/**']
-      : [],
+    baseUrl: "http://localhost:5173",
+    setupNodeEvents(on, config) {
+      // node event listeners (ถ้ามี)
+    },
   },
-})
+});
