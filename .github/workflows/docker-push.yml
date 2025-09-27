@@ -8,7 +8,7 @@ on:
 
 env:
   IMAGE_NAME: thitip/event-frontend
-  APP_PORT: 8080           # พอร์ตบน runner ใช้สำหรับเทส (map ไปใน container)
+  APP_PORT: 8080           # พอร์ตบน runner ใช้สำหรับเทส
 
 jobs:
   build_test_and_push:
@@ -20,49 +20,65 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # build image ใส่เข้ามาใน local daemon เพื่อนำไปรันเทส (ยังไม่ push)
+      # Build เข้า local daemon (ยังไม่ push)
       - name: Build image (load locally)
         uses: docker/build-push-action@v6
         with:
           context: .
-          load: true                          # << สำคัญ โหลดเข้า daemon
+          load: true
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha                 # ใช้ cache ของ GitHub
+          cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---- ตรวจไฟล์ที่ build เข้า image มาจริงไหม ----
+      # เลี่ยง sh: ใช้ --entrypoint ls ตรวจไฟล์ที่เสิร์ฟ
       - name: Sanity check built files
-        run: docker run --rm $IMAGE_NAME:${{ github.sha }} \
-               sh -lc 'ls -la /usr/share/nginx/html || true'
+        run: |
+          docker run --rm --entrypoint ls \
+            $IMAGE_NAME:${{ github.sha }} \
+            -la /usr/share/nginx/html || true
 
-      # รันคอนเทนเนอร์เว็บเพื่อเทส (สมมติ nginx ใน image ฟังที่พอร์ต 80)
+      # (ถ้าอยากดู nginx.conf ก็ทำได้แบบเดียวกัน)
+      - name: Show nginx.conf (if present)
+        run: |
+          docker run --rm --entrypoint cat \
+            $IMAGE_NAME:${{ github.sha }} \
+            /etc/nginx/conf.d/default.conf || true
+
+      # สตาร์ทเว็บ (สมมติ nginx listen 80)
       - name: Run container (map 8080->80)
         run: |
           docker run -d --rm --name app-under-test \
             -p $APP_PORT:80 \
             $IMAGE_NAME:${{ github.sha }}
+          # ยืนยันว่าขึ้นจริง
+          docker inspect -f '{{.State.Status}}' app-under-test
 
-      # รอเว็บขึ้น (ยิง curl 20 รอบ ถ้า container ตายจะโชว์ logs)
+      # รอเว็บขึ้น พร้อมโชว์ log ถ้าตายก่อน
       - name: Wait for app to be ready
         shell: bash
         run: |
           set -e
-          for i in {1..20}; do
-            if docker ps --format '{{.Names}}' | grep -q '^app-under-test$'; then
-              if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
-                echo "App is up on :${APP_PORT} (container port 80)"; exit 0
-              fi
-            else
-              echo "Container exited early — show logs"; docker logs app-under-test || true; exit 1
+          for i in {1..30}; do
+            status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
+            if [ "$status" != "running" ]; then
+              echo "Container status: $status"
+              docker logs app-under-test || true
+              exit 1
             fi
-            echo "Waiting for app... ($i/20)"
+            if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
+              echo "App is up on :${APP_PORT} (container port 80)"
+              exit 0
+            fi
+            echo "Waiting for app... ($i/30)"
             sleep 2
           done
-          echo "App did not start in time"; docker logs app-under-test || true; exit 2
+          echo "App did not start in time"
+          docker logs app-under-test || true
+          exit 2
 
-      # Fallback: บางที nginx.conf ตั้ง listen 5173 → restart map 8080->5173
+      # Fallback: กรณี nginx ของคุณ listen 5173 (เช่น config กำหนดไว้)
       - name: Fallback restart (map 8080->5173)
         if: failure()
         run: |
@@ -70,26 +86,32 @@ jobs:
           docker run -d --rm --name app-under-test \
             -p $APP_PORT:5173 \
             $IMAGE_NAME:${{ github.sha }}
+          docker inspect -f '{{.State.Status}}' app-under-test
 
       - name: Wait fallback @ :8080
         if: failure()
         shell: bash
         run: |
           set -e
-          for i in {1..20}; do
-            if docker ps --format '{{.Names}}' | grep -q '^app-under-test$'; then
-              if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
-                echo "App is up on :${APP_PORT} (container port 5173)"; exit 0
-              fi
-            else
-              echo "Container exited early (fallback) — logs:"; docker logs app-under-test || true; exit 1
+          for i in {1..30}; do
+            status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
+            if [ "$status" != "running" ]; then
+              echo "Container status (fallback): $status"
+              docker logs app-under-test || true
+              exit 1
             fi
-            echo "Waiting (fallback)... ($i/20)"
+            if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
+              echo "App is up on :${APP_PORT} (container port 5173)"
+              exit 0
+            fi
+            echo "Waiting (fallback) for app... ($i/30)"
             sleep 2
           done
-          echo "Not up after fallback"; docker logs app-under-test || true; exit 2
+          echo "Not up after fallback"
+          docker logs app-under-test || true
+          exit 2
 
-      # รัน Cypress E2E
+      # รัน Cypress
       - name: Run Cypress tests
         uses: cypress-io/github-action@v6
         with:
@@ -98,7 +120,7 @@ jobs:
         env:
           CI: true
 
-      # ---- เก็บ logs ----
+      # เก็บ log & ปิดคอนเทนเนอร์
       - name: Show container logs
         if: always()
         run: docker logs app-under-test || true
@@ -107,7 +129,7 @@ jobs:
         if: always()
         run: docker stop app-under-test || true
 
-      # ทสผ่านแล้วค่อย login & push
+      # เทสผ่านแล้วค่อย push
       - name: Login Docker Hub
         if: success()
         uses: docker/login-action@v3
