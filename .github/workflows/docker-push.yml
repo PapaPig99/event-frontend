@@ -8,7 +8,7 @@ on:
 
 env:
   IMAGE_NAME: thitip/event-frontend
-  APP_PORT: 5179            # ใช้พอร์ตที่โอกาสชนต่ำกว่า 8080
+  APP_PORT: 5179   # ใช้พอร์ตสุ่มชนยาก
 
 jobs:
   build_test_and_push:
@@ -20,7 +20,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build image เข้า local daemon (ยังไม่ push)
+      # Build เข้า local daemon (ยังไม่ push)
       - name: Build image (load locally)
         uses: docker/build-push-action@v6
         with:
@@ -32,47 +32,51 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ตรวจไฟล์ build ใน image (เลี่ยง sh โดยใช้ --entrypoint)
+      # ตรวจไฟล์ที่เสิร์ฟ (เลี่ยง sh)
       - name: Sanity check built files
         run: |
           docker run --rm --entrypoint ls \
-            $IMAGE_NAME:${{ github.sha }} \
-            -la /usr/share/nginx/html || true
+            $IMAGE_NAME:${{ github.sha }} -la /usr/share/nginx/html || true
 
       - name: Show nginx.conf (if present)
         run: |
           docker run --rm --entrypoint cat \
-            $IMAGE_NAME:${{ github.sha }} \
-            /etc/nginx/conf.d/default.conf || true
+            $IMAGE_NAME:${{ github.sha }} /etc/nginx/conf.d/default.conf || true
 
-      # เคลียร์ container ชื่อเดิมทิ้งก่อน
+      # เคลียร์ชื่อคอนเทนเนอร์เดิม
       - name: Pre-clean container name
         run: docker rm -f app-under-test || true
 
-      # สตาร์ทเว็บ: nginx ใน image ของคุณ listen 80 (จาก nginx.conf)
+      # สตาร์ทเว็บ (ไม่ใช้ --rm เพื่อเก็บ log ได้ถ้าดับเร็ว)
       - name: Run container (map $APP_PORT -> 80)
         run: |
-          set -e
-          docker run -d --rm --name app-under-test \
+          set -euo pipefail
+          docker run -d --name app-under-test \
             -p $APP_PORT:80 \
             $IMAGE_NAME:${{ github.sha }}
-          # ยืนยันว่ารันจริง
-          docker inspect -f '{{.State.Status}}' app-under-test
+          # สถานะทันทีหลังสตาร์ท
+          status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
+          echo "Initial container status: $status"
+          if [ "$status" != "running" ]; then
+            echo "Container not running right after start. Logs:"
+            docker logs app-under-test || true
+            exit 1
+          fi
 
-      # รอเว็บขึ้น: ตรวจสถานะก่อน แล้วจึง curl
+      # รอเว็บขึ้น โดยเช็คสถานะก่อนทุกครั้ง แล้วค่อย curl
       - name: Wait for app to be ready
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           for i in {1..40}; do
             status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
             if [ "$status" != "running" ]; then
-              echo "Container status: $status"
+              echo "Container status during wait: $status"
               docker logs app-under-test || true
               exit 1
             fi
             if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
-              echo "App is up on :${APP_PORT} (container port 80)"
+              echo "App is up on :${APP_PORT}"
               exit 0
             fi
             echo "Waiting for app... ($i/40)"
@@ -82,7 +86,7 @@ jobs:
           docker logs app-under-test || true
           exit 2
 
-      # รัน Cypress E2E (baseUrl ชี้ runner:port ที่ map ไว้)
+      # รัน Cypress
       - name: Run Cypress tests
         uses: cypress-io/github-action@v6
         with:
@@ -91,14 +95,14 @@ jobs:
         env:
           CI: true
 
-      # เก็บ log & ปิด container
+      # เก็บ log & ปิดคอนเทนเนอร์
       - name: Show container logs
         if: always()
         run: docker logs app-under-test || true
 
-      - name: Stop container
+      - name: Stop & remove container
         if: always()
-        run: docker stop app-under-test || true
+        run: docker rm -f app-under-test || true
 
       # เทสผ่านแล้วค่อย push
       - name: Login Docker Hub
