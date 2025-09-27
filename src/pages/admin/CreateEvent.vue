@@ -39,7 +39,7 @@ function validateForm() {
     errs.push('กรุณาเพิ่มโซนอย่างน้อย 1 โซน')
   } else {
     form.zones.forEach((z, idx) => {
-      if (!z.name?.trim()) errs.push(`กรุณากรอกชื่อโซนของแถวที่ ${idx + 1}`)
+      if (!z.zoneName?.trim()) errs.push(`กรุณากรอกชื่อโซนของแถวที่ ${idx + 1}`)
       if (z.capacity == null || Number(z.capacity) <= 0) errs.push(`กรุณากรอกจำนวนที่นั่งของโซนแถวที่ ${idx + 1}`)
       if (z.price == null || Number(z.price) < 0) errs.push(`กรุณากรอกราคาของโซนแถวที่ ${idx + 1}`)
     })
