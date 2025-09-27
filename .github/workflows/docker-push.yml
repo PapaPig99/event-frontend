@@ -85,6 +85,10 @@ jobs:
           echo "App did not start in time"
           docker logs app-under-test || true
           exit 2
+          
+      # ก่อน step "Run Cypress tests"
+      - name: Remove Cypress example specs
+        run: rm -rf cypress/e2e/2-advanced-examples || true
 
       # รัน Cypress
       - name: Run Cypress tests
