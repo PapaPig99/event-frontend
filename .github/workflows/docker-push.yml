@@ -8,81 +8,66 @@ on:
 
 env:
   IMAGE_NAME: thitip/event-frontend
-  APP_PORT: 8080            # พอร์ตบน runner ที่จะ map ไปหา container (แก้ได้)
+  APP_PORT: 8080
 
 jobs:
   build_test_and_push:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      # (ถ้าต้อง build SPA ก่อน COPY ลง nginx ให้ทำใน Dockerfile ของโปรเจกต์)
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # สร้าง image แบบ "โหลดเข้า local" แต่ยังไม่ push
-      - name: Build image (load locally, tag by SHA + latest)
+      # Build image เข้า local daemon เพื่อเอาไปรัน e2e (ยังไม่ push)
+      - name: Build image (load locally)
         uses: docker/build-push-action@v6
         with:
           context: .
-          load: true                         # สำคัญ: เอา image เข้า local daemon
+          load: true
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:latest
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:cache
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:cache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # รันคอนเทนเนอร์ให้เว็บขึ้นทดสอบ
-      # NOTE: ถ้า image ของคุณเสิร์ฟด้วย nginx บน port 80 → mapping 8080:80 (ตามตัวอย่าง)
-      # ถ้าเว็บคุณฟังที่พอร์ตอื่น เปลี่ยนด้านหลังของ -p ให้ตรง
+      # รันคอนเทนเนอร์เว็บเพื่อลองเทส (สมมติ nginx ฟังที่ 80)
       - name: Run container for E2E
         run: |
           docker run -d --rm --name app-under-test \
             -p $APP_PORT:80 \
             $IMAGE_NAME:${{ github.sha }}
 
-      # รอจนเว็บพร้อม (ลองยิง 30 ครั้ง ๆ ละ 2 วินาที)
       - name: Wait for app to be ready
-        shell: bash
         run: |
           for i in {1..30}; do
             if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
               echo "App is up"; exit 0
             fi
-            echo "Waiting for app... ($i)"
+            echo "Waiting for app... ($i/30)"
             sleep 2
           done
           echo "App did not start in time" >&2
           docker logs app-under-test || true
           exit 1
 
-      # รัน Cypress บน runner (ไม่ต้องยุ่ง Docker เพิ่ม) — ต้องมีโฟลเดอร์ cypress/config ใน repo
       - name: Run Cypress E2E
         uses: cypress-io/github-action@v6
         with:
           browser: chrome
-          # ถ้าโปรเจกต์มี package.json + devDependencies:cypress อยู่แล้ว action จะติดตั้งให้
-          # ถ้าคุณไม่มี ให้เพิ่ม "install: true" (ค่าดีฟอลต์ก็ติดตั้งให้อยู่แล้ว)
           config: baseUrl=http://localhost:${{ env.APP_PORT }}
         env:
-          # ถ้าใช้ Cypress Cloud ให้ใส่ key ด้วย
-          # CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
-          # อื่น ๆ เช่น ENV ของแอป กำหนดเพิ่มได้
           CI: true
 
-      # ดึง log มาช่วยดีบัก (จะรันเสมอ แม้เทสพัง)
       - name: Show container logs
         if: always()
         run: docker logs app-under-test || true
 
-      # ปิดคอนเทนเนอร์ (จะรันเสมอ)
       - name: Stop container
         if: always()
         run: docker stop app-under-test || true
 
-      # เทสผ่านแล้วค่อยล็อกอิน & push
+      # เทสผ่านแล้วค่อย login & push
       - name: Login Docker Hub
         if: success()
         uses: docker/login-action@v3
@@ -90,7 +75,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push images (SHA + latest)
+      - name: Push images
         if: success()
         run: |
           docker push $IMAGE_NAME:${{ github.sha }}
