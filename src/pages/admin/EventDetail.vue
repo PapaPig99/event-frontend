@@ -1,184 +1,201 @@
 <template>
   <div class="event-detail-page">
-    <!-- Title -->
-      <header class="toolbar">
-    <div class="title">Event Detail</div>
-</header>
-    <!-- Event Banner -->
-    <div class="banner">
-      <img :src="event.banner" alt="Event Banner" />
-    </div>
+    <!-- Top toolbar -->
+    <header class="toolbar">
+      <div class="title">Event details</div>
+      <div class="user-chip">
+        <i class="i-person" /> <span>{{ userRole }}</span>
+      </div>
+    </header>
 
-    <!-- Event Info -->
-    <div class="event-info">
-      <h2 class="event-name">{{ event.name }}</h2>
-      <p class="event-date">
-        วันที่จัดแสดง: {{ event.date }} เวลา {{ event.time }}
-      </p>
-    </div>
+    <!-- Hero / Banner card -->
+    <section class="hero">
+      <img class="poster" :src="event.bannerUrl" alt="Event Banner" />
+      <div class="hero-info">
+        <h1 class="event-name">{{ event.title }}</h1>
+        <div class="meta-grid">
+          <div><b>ศิลปิน/โชว์:</b> {{ event.subtitle || "-" }}</div>
+          <div><b>สถานที่:</b> {{ event.venue }}</div>
+          <div><b>วันเวลา:</b> {{ selectedShowtime?.label || "-" }}</div>
+          <div><b>ช่วงราคา:</b> {{ priceRangeText }}</div>
+        </div>
 
-    <!-- Zone Selection -->
-    <div class="zone-box">
-      <h3>เลือกโซนที่นั่ง</h3>
+        <div class="actions">
+          <!-- เลือกรอบการแสดง -->
+          <select v-model="selectedShowId" class="select">
+            <option disabled value="">เลือกวันที่แสดง</option>
+            <option v-for="s in event.showtimes" :key="s.id" :value="s.id">
+              {{ s.label }}
+            </option>
+          </select>
+
+          <button class="btn primary" :disabled="!selectedShowId" @click="scrollToZones">
+            ดูโซนที่นั่ง
+          </button>
+        </div>
+
+        <ul class="notes">
+          <li v-for="(n, i) in event.quickNotes" :key="i">{{ n }}</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Zone table -->
+    <section ref="zonesRef" class="zone-box">
+      <h2>ผังที่นั่ง & โซนราคา</h2>
       <table>
         <thead>
           <tr>
             <th>โซน</th>
-            <th>ราคา</th>
+            <th>ราคา (บาท)</th>
             <th>สถานะ</th>
+            <th>จอง</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(zone, i) in event.zones" :key="i">
-            <td>{{ zone.name }}</td>
-            <td>{{ zone.price.toLocaleString() }}</td>
-            <td :class="zone.status">{{ getStatusText(zone.status) }}</td>
+          <tr v-for="z in zonesForSelectedShow" :key="z.id">
+            <td class="zone-name">{{ z.name }}</td>
+            <td>{{ fmtPrice(z.price) }}</td>
+            <td>
+              <span class="pill" :class="statusClass(z.status)">
+                {{ statusText(z.status) }}
+              </span>
+            </td>
+            <td>
+              <button
+                class="btn"
+                :disabled="z.status === 'soldout'"
+                @click="book(z)"
+              >
+                จองบัตร
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
-      <button class="btn-book" @click="bookTicket">จองบัตร</button>
-    </div>
+    </section>
 
-    <!-- Event Description -->
-    <div class="description">
-      <h3>รายละเอียดการแสดง</h3>
-      <p>{{ event.description }}</p>
-    </div>
+    <!-- Description -->
+    <section class="description">
+      <h2>รายละเอียดการแสดง</h2>
+      <div class="desc" v-html="event.descriptionHtml"></div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { reactive } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
+
+const route = useRoute();
+const router = useRouter();
+const userRole = "User"; // เปลี่ยนตามระบบ auth ของคุณ
 
 const event = reactive({
-  name: "Mariah Carey: The Celebration of Mimi",
-  date: "15 ตุลาคม 2568",
-  time: "19:00 น.",
-  banner: "/assets/event-banner.jpg",
-  zones: [
-    { name: "Zone A (ใกล้เวที)", price: 20000, status: "available" },
-    { name: "Zone B (กลาง)", price: 15000, status: "few" },
-    { name: "Zone C (ด้านหลัง)", price: 8000, status: "soldout" },
-  ],
-  description:
-    "MARIAH CAREY The Celebration of Mimi ... (เนื้อหาอธิบายรายละเอียดงาน / ศิลปิน / สิ่งที่ผู้ชมจะได้สัมผัส)"
+  id: null,
+  title: "",
+  subtitle: "",
+  bannerUrl: "",
+  seatmapUrl: "",
+  venue: "",
+  quickNotes: [],
+  descriptionHtml: "",
+  showtimes: [],
+  zonesByShow: {}
 });
 
-function getStatusText(status) {
-  switch (status) {
-    case "available":
-      return "ว่าง";
-    case "few":
-      return "เหลือน้อย";
-    case "soldout":
-      return "เต็มแล้ว";
-    default:
-      return "-";
-  }
+const selectedShowId = ref("");
+const zonesRef = ref(null);
+
+const selectedShowtime = computed(() =>
+  event.showtimes.find((s) => s.id === selectedShowId.value)
+);
+
+const zonesForSelectedShow = computed(() => {
+  return event.zonesByShow[selectedShowId.value] || [];
+});
+
+const priceRangeText = computed(() => {
+  const all = Object.values(event.zonesByShow).flat();
+  if (!all.length) return "-";
+  const prices = all.map((z) => z.price).filter((n) => Number.isFinite(n));
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return `${fmtPrice(min)} - ${fmtPrice(max)}`;
+});
+
+function fmtPrice(n) {
+  return (n ?? 0).toLocaleString();
+}
+function statusText(s) {
+  if (s === "available") return "ว่าง";
+  if (s === "few") return "เหลือน้อย";
+  if (s === "soldout") return "เต็มแล้ว";
+  return "-";
+}
+function statusClass(s) {
+  return {
+    available: s === "available",
+    few: s === "few",
+    soldout: s === "soldout",
+  };
+}
+function scrollToZones() {
+  zonesRef.value?.scrollIntoView({ behavior: "smooth" });
+}
+function book(zone) {
+  router.push({
+    path: "/checkout",
+    query: {
+      eventId: event.id,
+      showId: selectedShowId.value,
+      zoneId: zone.id,
+    },
+  });
 }
 
-function bookTicket() {
-  alert("ไปหน้าจองบัตรได้เลย 🚀");
-}
+onMounted(async () => {
+  const id = route.params.id || 1;
+  const res = await fetch(`/api/events/${id}`);
+  const data = await res.json();
+  Object.assign(event, data);
+  selectedShowId.value = data.showtimes?.[0]?.id || "";
+});
 </script>
 
 <style scoped>
-.event-detail-page {
-  /* max-width: 900px; */
-  /* margin: auto; */
-  padding: 20px;
-}
+.event-detail-page { padding: 20px; }
+.toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.title { color:#5f6063; font-size:20px; font-weight:600; }
+.user-chip { display:flex; align-items:center; gap:8px; color:#5f6063; }
+.i-person { width:18px; height:18px; border-radius:50%; background:#ddd; display:inline-block; }
 
-.title {
-  font-weight: 700;
-  font-size: 50px;
-  text-align: center;
-  margin-bottom: 30px;
+.hero {
+  display:grid; grid-template-columns: 260px 1fr; gap:24px;
+  background:#fff; border-radius:16px; padding:20px; box-shadow:0 4px 18px rgba(0,0,0,.06);
+  margin-bottom:22px;
 }
+.poster { width:100%; border-radius:12px; }
+.event-name { margin:0 0 10px; font-size:24px; font-weight:800; }
+.meta-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px 16px; margin-bottom:14px; }
+.actions { display:flex; gap:10px; margin-bottom:10px; }
+.select { padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; min-width:280px; background:#fff; }
+.btn { padding:10px 16px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
+.btn.primary { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.notes { margin:6px 0 0 18px; color:#6b7280; }
 
-.banner img {
-  width: 100%;
-  border-radius: 10px;
-  margin-bottom: 20px;
-}
+.zone-box { background:#fff; border-radius:16px; padding:20px; box-shadow:0 4px 18px rgba(0,0,0,.06); }
+.zone-box h2 { margin:0 0 12px; }
+table { width:100%; border-collapse: collapse; }
+th, td { text-align:center; padding:12px; border-bottom:1px solid #f1f5f9; }
+td.zone-name { text-align:left; }
 
-.event-info {
-  text-align: center;
-  margin-bottom: 30px;
-}
+.pill { padding:6px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+.pill.available { background:#ecfdf5; color:#059669; }
+.pill.few { background:#fff7ed; color:#d97706; }
+.pill.soldout { background:#fef2f2; color:#b91c1c; }
 
-.event-name {
-  font-size: 28px;
-  font-weight: bold;
-}
-
-.event-date {
-  font-size: 18px;
-  color: #777;
-}
-
-.zone-box {
-  margin-bottom: 40px;
-}
-
-.zone-box table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 15px;
-}
-
-.zone-box th,
-.zone-box td {
-  border: 1px solid #ddd;
-  padding: 12px;
-  text-align: center;
-}
-
-.available {
-  color: green;
-}
-.few {
-  color: orange;
-}
-.soldout {
-  color: red;
-}
-
-.btn-book {
-  background: #e74c3c;
-  color: #fff;
-  padding: 12px 25px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.btn-book:hover {
-  background: #c0392b;
-}
-
-.description {
-  margin-top: 40px;
-}
-
-.description h3 {
-  font-size: 22px;
-  margin-bottom: 15px;
-}
-
-.detail-events {
-  padding: 20px;
-}
-.title {
-  color: #5f6063;
-  font-size: 20px;
-  font-weight: 400;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
+.description { margin-top:20px; background:#fff; border-radius:16px; padding:20px; box-shadow:0 4px 18px rgba(0,0,0,.06); }
+.desc :is(p,li) { color:#374151; line-height:1.7; }
 </style>
