@@ -114,16 +114,21 @@ const openEvent = (id: number | string) => router.push(`/event/${id}`)
 
         <!-- Categories -->
         <div class="pill-row">
-          <button type="button" class="pill" :class="{active: cat==='Concert'}"
-                  @click="setCat('Concert')">คอนเสิร์ต</button>
-          <button type="button" class="pill" :class="{active: cat==='Performing Arts'}"
-                  @click="setCat('Performing Arts')">การแสดง</button>
-          <button type="button" class="pill" :class="{active: cat==='Education'}"
-                  @click="setCat('Education')">การศึกษา</button>
-          <button type="button" class="pill" :class="{active: cat==='Business & Investment'}"
-                  @click="setCat('Business & Investment')">ธุรกิจและการลงทุน</button>
-          <button type="button" class="pill" :class="{active: cat==='Sports'}"
-                  @click="setCat('Sports')">กีฬา</button>
+          <button type="button" class="pill" :class="{active: cat==='concert'}"
+                  @click="setCat('concert')">คอนเสิร์ต</button>
+
+          <button type="button" class="pill" :class="{active: cat==='show'}"
+                  @click="setCat('show')">การแสดง</button>
+
+          <button type="button" class="pill" :class="{active: cat==='education'}"
+                  @click="setCat('education')">การศึกษา</button>
+                  
+          <button type="button" class="pill" :class="{active: cat==='business'}"
+                  @click="setCat('business')">ธุรกิจและการลงทุน</button>
+
+          <button type="button" class="pill" :class="{active: cat==='sport'}"
+                  @click="setCat('sport')">กีฬา</button>
+            
         </div>
       </div>
     </section>
