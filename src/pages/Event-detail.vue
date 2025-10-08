@@ -194,7 +194,7 @@ function goToConcertPlan() {
                 <li>
                   <i class="fa-regular fa-clock"></i>
                   <div>
-                    <div class="label">เวลาแสดง</div>
+                    <div class="label">ประตูเปิด</div>
                     <div class="val">{{ event.timeText }}</div>
                   </div>
                 </li>
