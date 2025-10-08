@@ -167,9 +167,9 @@ function openLogin() {
         </summary>
 
         <div class="dropdown">
-          <RouterLink to="/profile" class="item">
+          <!-- <RouterLink to="/profile" class="item">
             <i class="fa-regular fa-id-badge"></i> โปรไฟล์ของฉัน
-          </RouterLink>
+          </RouterLink> -->
           <RouterLink to="/myevent" class="item">
             <i class="fa-regular fa-calendar-check"></i> กิจกรรมของฉัน
           </RouterLink>

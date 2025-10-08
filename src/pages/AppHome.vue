@@ -125,7 +125,7 @@ function onSearch(){
 <RecommendedSection
   :events="displayRecommended"
   title="ธุรกิจและการลงทุน"
-  category="Education"
+  category="business"
   @open="openEvent"/>
    
 
