@@ -201,8 +201,6 @@ html, body {
 .avatar {
   width: 28px; height: 28px; border-radius: 50%;
   object-fit: cover;
-  border: 2px solid rgba(255,255,255,.6);
-  background: rgba(255,255,255,.18);
   box-shadow: 0 1px 4px rgba(0,0,0,.12) inset;
 }
 .username { font-weight: 600; opacity: .95; letter-spacing: .2px; }
