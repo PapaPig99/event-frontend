@@ -1,19 +1,17 @@
 <template>
-  <div class="event-detail-page">
+  <div class="event-detail-page" @keyup.esc="closeModal" tabindex="0">
     <!-- Top toolbar -->
     <header class="toolbar">
       <div class="page-title">Event details</div>
     </header>
 
-    <!-- HERO (พาสเทล) -->
+    <!-- HERO -->
     <section class="hero pastel">
       <img class="poster" :src="event.bannerUrl" alt="Event Banner" />
-
       <div class="hero-info">
         <div class="category">{{ event.category || 'คอนเสิร์ต' }}</div>
         <h1 class="event-name">{{ event.title }}</h1>
 
-        <!-- แผงรายละเอียดหลัก -->
         <div class="info-strip pastel">
           <div class="info-grid">
             <div class="info-item">
@@ -23,15 +21,13 @@
                 <div class="value">{{ showDateText }}</div>
               </div>
             </div>
-
             <div class="info-item">
               <div class="icon">📍</div>
               <div>
                 <div class="label">สถานที่แสดง</div>
-                <div class="value">{{ event.venue }}</div>
+                <div class="value">{{ event.venue || '-' }}</div>
               </div>
             </div>
-
             <div class="info-item">
               <div class="icon">⏰</div>
               <div>
@@ -39,7 +35,6 @@
                 <div class="value">{{ doorOpenText }}</div>
               </div>
             </div>
-
             <div class="info-item">
               <div class="icon">💳</div>
               <div>
@@ -47,7 +42,6 @@
                 <div class="value">{{ priceTiersText }}</div>
               </div>
             </div>
-
             <div class="info-item">
               <div class="icon">🛒</div>
               <div>
@@ -64,43 +58,108 @@
     <section class="show-section">
       <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
 
-      <div class="show-card">
-        <div class="show-card-head">
-          <div class="place">
-            <span class="place-dot">📍</span>
-            {{ event.venue }}
+      <div class="show-card dark">
+        <!-- ซ้าย: ผัง + โปสเตอร์ + pricing -->
+        <div class="show-media">
+          <div class="seatmap-wrap">
+            <img :src="event.seatmapUrl || event.bannerUrl" alt="Seatmap" class="seatmap-img" />
+            <img :src="event.bannerUrl" alt="Poster" class="poster-mini" />
+            <div class="legend-card" v-if="priceLegend.length">
+              <div class="legend-title">PRICING</div>
+              <div class="legend-line" v-for="p in priceLegend" :key="p">{{ p }}</div>
+            </div>
           </div>
-          <div class="price-line">ราคาบัตร {{ priceTiersText }}</div>
         </div>
 
-        <div class="show-card-body">
-          <div class="date-bar">
-            <div class="date-chip">
-              <span>วันเสาร์ที่</span>
-              <strong>{{ formatThaiDate(event.startDate) }}</strong>
+        <!-- ขวา: ตารางวันที่ -->
+        <div class="show-content">
+          <div class="show-header">
+            <div class="place">
+              <svg class="icon-pin" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2C8.686 2 6 4.686 6 8c0 4.418 6 12 6 12s6-7.582 6-12c0-3.314-2.686-6-6-6zm0 8.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+              </svg>
+              {{ event.venue || '-' }}
             </div>
-            <div class="grow"></div>
-            <button class="btn attendee">รายชื่อผู้เข้าร่วม</button>
-            <span class="time-chip">{{ doorOpenText }}</span>
+            <div class="price-line">ราคาบัตร {{ priceLineText }}</div>
+          </div>
+
+          <div class="date-table">
+            <div class="table-head">
+              <div>วันที่แสดง</div>
+              <div class="right">เวลา</div>
+            </div>
+
+            <div class="table-row">
+              <div class="date-text">วันเสาร์ที่ {{ formatThaiDate(event.startDate) }}</div>
+              <div class="actions">
+                <button class="btn attendee">
+                  <svg class="icon-user" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 2.239-7 5v2h14v-2c0-2.761-3.134-5-7-5z"/>
+                  </svg>
+                  รายชื่อผู้เข้าร่วม
+                </button>
+                <!-- กดปุ่มเวลาให้เปิดป๊อปอัพกลางจอ -->
+                <button class="time-pill" @click="openModal">{{ firstShowtimeText }}</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- รายละเอียด -->
-    <section class="description">
+    <!-- Overlay -->
+    <transition name="fade">
+      <div v-if="modalOpen" class="modal-overlay" @click.self="closeModal"></div>
+    </transition>
+
+    <!-- MODAL กลางจอ -->
+    <transition name="pop">
+      <section
+        v-if="modalOpen"
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="โซนที่นั่ง"
+      >
+        <header class="modal-head">
+          <h3 class="modal-title">โซนที่นั่ง</h3>
+          <button class="icon-close" @click="closeModal" aria-label="ปิด">✕</button>
+        </header>
+
+        <div class="modal-body">
+          <div class="zone-table compact">
+            <div class="z-head">
+              <div>โซน</div>
+              <div class="right">คงเหลือ</div>
+            </div>
+            <div class="z-row" v-for="z in zonesForModal" :key="z.id">
+              <div class="z-name">
+                {{ z.name }}
+                <span class="z-price">฿{{ z.price.toLocaleString() }}</span>
+              </div>
+              <div class="z-qty" :class="qtyClass(z.remaining)">{{ z.remaining }}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </transition>
+
+    <!-- รายละเอียดด้านล่างหน้า -->
+    <section class="detail-section">
       <h2 class="section-title">รายละเอียด</h2>
-      <div class="desc" v-html="event.descriptionHtml"></div>
+      <div class="detail-card">
+        <div v-if="!isPlainText" class="detail-body" v-html="event.descriptionHtml"></div>
+        <div v-else class="detail-body plain">{{ event.descriptionHtml || '- ไม่มีข้อมูลรายละเอียด -' }}</div>
+      </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { reactive, ref, computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 
 const route = useRoute();
-const router = useRouter();
 
 const event = reactive({
   id: null,
@@ -110,143 +169,68 @@ const event = reactive({
   seatmapUrl: "",
   venue: "",
   descriptionHtml: "",
-  showtimes: [],          // [{ id, label, startTime }]
-  zonesByShow: {},
+  sessions: [],
+  zones: [],
   startDate: null,
   endDate: null,
   saleStartAt: null,
   saleEndAt: null,
   saleUntilSoldout: false,
-  doorOpenTime: ""        // "17:00" หรือ "ก่อนเริ่มงาน 1 ชม." / "ก่อนเริ่มงาน 30 นาที"
+  doorOpenTime: ""
 });
 
+const modalOpen = ref(false);
 const selectedShowId = ref("");
-const zonesRef = ref(null);
 
-/* ---- พ.ศ. -> ค.ศ. ---- */
-function fixThaiBuddhistYear(input) {
-  if (!input) return null;
-  let s = String(input).trim().replace(" ", "T");
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(T(\d{2}):(\d{2})(?::(\d{2}))?)?/);
-  if (!m) return s;
-  let year = parseInt(m[1], 10);
-  if (year > 2400) year -= 543;
-  return year.toString().padStart(4, "0") + s.slice(4);
-}
-function toDate(value) {
-  const iso = fixThaiBuddhistYear(value);
-  return iso ? new Date(iso) : null;
-}
+/* Utils */
+function fixThaiBuddhistYear(input){ if(!input)return null; const s=String(input).trim().replace(" ","T"); const m=s.match(/^(\d{4})-(\d{2})-(\d{2})(T(\d{2}):(\d{2}))?/); if(!m)return s; let y=parseInt(m[1],10); if(y>2400)y-=543; return y.toString().padStart(4,"0")+s.slice(4);}
+function toDate(v){ const iso=fixThaiBuddhistYear(v); return iso?new Date(iso):null;}
+function hhmm(t){ if(!t)return""; const [h,m]=String(t).split(":"); return `${h.padStart(2,"0")}:${m.padStart(2,"0")}`;}
 
-/* ---- Door open rules ---- */
-function parseDoorOpenRule(val) {
-  if (!val) return { type: "none" };
-  const s = String(val).trim();
-  const m = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (m) return { type: "absolute", time: `${m[1].padStart(2,"0")}:${m[2]}` };
-  const h = s.match(/^ก่อนเริ่มงาน\s*(\d+)\s*ชม\.?$/);
-  if (h) return { type: "offset", minutes: Number(h[1]) * 60 };
-  const n = s.match(/^ก่อนเริ่มงาน\s*(\d+)\s*นาที$/);
-  if (n) return { type: "offset", minutes: Number(n[1]) };
-  return { type: "text", text: s };
-}
-function minusMinutes(hhmmStr, minutes) {
-  if (!hhmmStr) return "";
-  const [H, M] = hhmmStr.split(":").map((x) => parseInt(x, 10));
-  let total = H * 60 + M - (minutes || 0);
-  total = ((total % 1440) + 1440) % 1440;
-  const hh = String(Math.floor(total / 60)).padStart(2, "0");
-  const mm = String(total % 60).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-/* ---- Computed ---- */
-const selectedShowtime = computed(() =>
-  event.showtimes.find((s) => s.id === selectedShowId.value)
-);
-
-const showDateText = computed(() => {
-  if (!event.startDate) return "-";
-  const s = formatThaiDate(event.startDate);
-  if (!event.endDate || event.endDate === event.startDate) return s;
-  return `${s} – ${formatThaiDate(event.endDate)}`;
+/* Computed */
+const showDateText = computed(()=> event.startDate ? formatThaiDate(event.startDate) : "-");
+const doorOpenText = computed(()=> event.doorOpenTime || "-");
+const priceTiersText = computed(()=>{
+  const uniq=[...new Set((event.zones||[]).map(z=>Number(z.price||0)))].filter(n=>n>0).sort((a,b)=>b-a);
+  return uniq.length ? uniq.map(n=>n.toLocaleString()).join(" / ") : "-";
 });
-
-const saleStartText = computed(() => {
-  if (!event.saleStartAt) return "-";
+const priceLineText = computed(()=> priceTiersText.value==="-" ? "-" : `${priceTiersText.value} บาท`);
+const firstShowtimeText = computed(()=> {
+  const t = event.sessions?.[0]?.startTime;
+  return t ? `${hhmm(t)} น.` : "-";
+});
+const saleStartText = computed(()=>{
+  if(!event.saleStartAt) return "-";
   const start = formatThaiDateTime(event.saleStartAt);
-  const until = event.saleUntilSoldout
-    ? " จนกว่าบัตรจะหมด"
-    : (event.saleEndAt ? ` ถึง ${formatThaiDateTime(event.saleEndAt)}` : "");
+  const until = event.saleUntilSoldout ? " จนกว่าบัตรจะหมด" : (event.saleEndAt ? ` ถึง ${formatThaiDateTime(event.saleEndAt)}` : "");
   return start + until;
 });
+const priceLegend = computed(()=> priceTiersText.value==="-" ? [] : priceTiersText.value.split("/").map(s=>s.trim()+" บาท"));
 
-const doorOpenText = computed(() => {
-  const raw = event.doorOpenTime;
-  if (!raw) return "-";
-  const rule = parseDoorOpenRule(raw);
-  if (rule.type === "absolute") return `${rule.time} น.`;
-  if (rule.type === "text") return rule.text;
-  if (rule.type === "offset") {
-    const start = selectedShowtime.value?.startTime || event.showtimes?.[0]?.startTime || "";
-    if (!start) {
-      const mins = rule.minutes;
-      return mins % 60 === 0 ? `ก่อนเริ่มงาน ${mins / 60} ชม.` : `ก่อนเริ่มงาน ${mins} นาที`;
-    }
-    const open = minusMinutes(start, rule.minutes);
-    return `${open} น.`;
-  }
-  return "-";
+/* data for modal */
+const zonesForModal = computed(()=> (event.zones||[]).map(z=>({
+  id: z.id,
+  name: z.name,
+  price: Number(z.price || 0),
+  remaining: z.remaining ?? z.left ?? 0
+})));
+
+/* plain/HTML description check */
+const isPlainText = computed(()=>{
+  const s=(event.descriptionHtml||"").trim(); if(!s) return true; return !/<[a-z][\s\S]*>/i.test(s);
 });
 
-const priceTiersText = computed(() => {
-  const all = Object.values(event.zonesByShow).flat();
-  if (!all.length) return "-";
-  const uniq = [...new Set(all.map(z => Number(z.price || 0)))]
-    .filter(n => n > 0)
-    .sort((a,b)=>b-a);
-  return uniq.map(n => n.toLocaleString()).join(" / ");
-});
+/* Helpers */
+function formatThaiDate(d){ const dt=toDate(d); if(!dt) return "-"; return dt.toLocaleDateString("th-TH",{day:"numeric",month:"long",year:"numeric"}); }
+function formatThaiDateTime(d){ const dt=toDate(d); if(!dt) return "-"; const dd=dt.toLocaleDateString("th-TH",{day:"numeric",month:"long",year:"numeric"}); const tt=dt.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"}); return `${dd}, ${tt} น.`; }
 
-/* ---- UI helpers ---- */
-function fmtPrice(n) { return (n ?? 0).toLocaleString(); }
-function scrollToZones() { zonesRef.value?.scrollIntoView({ behavior: "smooth" }); }
-function book(zone) { router.push({ path: "/checkout", query: { eventId: event.id, showId: selectedShowId.value, zoneId: zone.id }}); }
+/* Modal handlers */
+function openModal(){ modalOpen.value = true; setTimeout(()=>document.querySelector(".icon-close")?.focus(),0); }
+function closeModal(){ modalOpen.value = false; }
+function qtyClass(n){ if(n>10) return "ok"; if(n>0) return "warn"; return "zero"; }
 
-function formatThaiDate(d) {
-  const dt = toDate(d);
-  if (!dt) return "-";
-  return dt.toLocaleDateString("th-TH", { day:"numeric", month:"long", year:"numeric" });
-}
-function formatThaiDateTime(d) {
-  const dt = toDate(d);
-  if (!dt) return "-";
-  const dd = dt.toLocaleDateString("th-TH", { day:"numeric", month:"long", year:"numeric" });
-  const tt = dt.toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" });
-  return `${dd}, ${tt} น.`;
-}
-function hhmm(timeStr) {
-  if (!timeStr) return "";
-  const [h,m] = String(timeStr).split(":");
-  return `${h.padStart(2,"0")}:${m.padStart(2,"0")}`;
-}
-
-/* ---- Normalize API ---- */
-function buildShowLabel(name, time) {
-  const text = hhmm(time || "") || "-";
-  return name ? `${name} • ${text}` : text;
-}
-function normalizeEvent(api) {
-  const showtimes = (api.sessions || [])
-    .sort((a,b) => (a.startTime || "").localeCompare(b.startTime || ""))
-    .map(s => ({ id: s.id, label: buildShowLabel(s.name, s.startTime), startTime: s.startTime || "" }));
-
-  const zones = (api.zones || []).map(z => ({
-    id: z.id, name: z.name, price: Number(z.price ?? 0), status: "available",
-  }));
-  const zonesByShow = {};
-  for (const s of showtimes) zonesByShow[s.id] = zones;
-
+/* Load */
+function normalizeEvent(api){
   return {
     id: api.id ?? null,
     title: api.title ?? "",
@@ -255,7 +239,8 @@ function normalizeEvent(api) {
     seatmapUrl: api.seatmapImageUrl ?? "",
     venue: api.location ?? "",
     descriptionHtml: api.description ?? "",
-    showtimes, zonesByShow,
+    sessions: (api.sessions||[]).sort((a,b)=>String(a.startTime).localeCompare(String(b.startTime))),
+    zones: (api.zones||[]).map(z=>({...z, remaining:z.remaining ?? z.left ?? 0})),
     startDate: fixThaiBuddhistYear(api.startDate),
     endDate: fixThaiBuddhistYear(api.endDate),
     saleStartAt: fixThaiBuddhistYear(api.saleStartAt),
@@ -264,94 +249,108 @@ function normalizeEvent(api) {
     doorOpenTime: api.doorOpenTime ?? ""
   };
 }
-
-/* ---- Fetch ---- */
-onMounted(async () => {
+onMounted(async()=>{
   const id = route.params.id || 1;
   const res = await fetch(`/api/events/${id}`);
-  if (!res.ok) { console.error("HTTP", res.status); return; }
-  const data = await res.json();
-  Object.assign(event, normalizeEvent(data));
-  selectedShowId.value = event.showtimes?.[0]?.id || "";
+  if(!res.ok) return console.error("HTTP", res.status);
+  Object.assign(event, normalizeEvent(await res.json()));
+  selectedShowId.value = event.sessions?.[0]?.id || "";
 });
 </script>
 
 <style scoped>
+/* Page */
 .event-detail-page{ padding:20px; background:#f6f8fb; }
-
-/* Toolbar + Page title */
 .toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-.page-title{ font-size:22px; font-weight:400; color:#5f6063; margin:0; letter-spacing:.2px; }
+.page-title{ font-size:22px; font-weight:400; color:#5f6063; }
 
 /* HERO */
-.hero{
-  display:grid; grid-template-columns:320px 1fr; gap:20px;
-  background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.06);
-  margin-bottom:16px;
-}
-.hero.pastel{ background: linear-gradient(90deg,#e6fff4 0%, #e3f6ff 100%); }
-
-/* Poster (A2, ขอบตรง) */
-.poster{
-  width:100%; aspect-ratio:420/594; object-fit:cover; border-radius:0 !important; background:#eee;
-}
-
-/* Headings in hero */
+.hero{ display:grid; grid-template-columns:320px 1fr; gap:20px; background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); margin-bottom:16px; }
+.hero.pastel{ background:linear-gradient(90deg,#e6fff4 0%, #e3f6ff 100%); }
+.poster{ width:100%; aspect-ratio:420/594; object-fit:cover; background:#eee; }
 .category{ color:#6b7280; font-weight:700; margin-bottom:4px; }
-.event-name{ margin:0 0 10px; font-size:26px; font-weight:700; color:#111827; }
-
-/* Pastel info strip */
-.info-strip.pastel{
-  background: rgba(255,255,255,.85);
-  border:1px solid #e5e7eb;
-  border-radius:12px;
-  padding:14px;
-  backdrop-filter: blur(2px);
-}
+.event-name{ font-size:26px; font-weight:700; color:#111827; margin:0 0 10px; }
+.info-strip.pastel{ background:rgba(255,255,255,.85); border:1px solid #e5e7eb; border-radius:12px; padding:14px; }
 .info-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 18px; }
-.info-item{ display:flex; gap:10px; align-items:flex-start; }
-.icon{ width:24px; height:24px; display:flex; align-items:center; justify-content:center; }
+.info-item{ display:flex; gap:10px; }
 .label{ font-size:12px; color:#6b7280; }
 .value{ font-weight:600; color:#0f172a; }
 
-/* Section title */
-.section-title{ font-size:18px; font-weight:700; color:#0f172a; margin:10px 0 10px; }
+/* SHOW CARD (Dark) */
+.show-card.dark{ display:grid; grid-template-columns:360px 1fr; gap:16px; background:#0e0e0e; color:#fff; border-radius:16px; padding:18px; box-shadow:0 14px 28px rgba(0,0,0,.35); }
+.show-media{ display:flex; justify-content:center; }
+.seatmap-wrap{ position:relative; width:100%; max-width:320px; overflow:hidden; border-radius:10px; background:#0f172a; }
+.seatmap-img{ width:100%; aspect-ratio:4/3; object-fit:cover; }
+.poster-mini{ position:absolute; right:10px; top:10px; width:84px; height:124px; object-fit:cover; border-radius:6px; box-shadow:0 8px 18px rgba(0,0,0,.45); }
+.legend-card{ position:absolute; right:10px; bottom:10px; width:100px; background:#fff; color:#111; border-radius:8px; padding:8px; box-shadow:0 8px 22px rgba(0,0,0,.45); }
+.legend-title{ font-size:11px; font-weight:800; margin-bottom:6px; }
+.legend-line{ font-size:10px; border-bottom:1px dashed #e5e7eb; padding:2px 0; }
+.legend-line:last-child{ border-bottom:none; }
 
-/* Show card */
-.show-card{
-  background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,.06);
-  overflow:hidden;
+.show-content{ display:flex; flex-direction:column; gap:12px; }
+.show-header .place{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:18px; }
+.icon-pin{ width:22px; height:22px; fill:#ef4444; }
+.price-line{ margin-top:2px; color:#e5e7eb; }
+
+/* Date table */
+.date-table{ margin-top:6px; background:#fff; border-radius:10px; overflow:hidden; color:#111; }
+.table-head{ display:flex; justify-content:space-between; background:#6b7280; color:#fff; padding:12px 16px; font-weight:800; }
+.table-head .right{ text-align:right; }
+.table-row{ display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:#fff; }
+.date-text{ font-size:16px; }
+.actions{ display:flex; align-items:center; gap:12px; }
+
+/* Buttons */
+.btn.attendee{ background:#1d4ed8; color:#fff; font-weight:800; border:none; border-radius:999px; padding:10px 18px; display:inline-flex; gap:8px; align-items:center; box-shadow:0 8px 18px rgba(29,78,216,.35); }
+.btn.attendee .icon-user{ width:18px; height:18px; fill:#fff; }
+.time-pill{ background:#ff6a00; color:#fff; font-weight:900; border:none; border-radius:999px; padding:10px 18px; box-shadow:0 8px 18px rgba(255,106,0,.35); }
+
+/* ===== Modal (กลางจอ) ===== */
+.modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:90; }
+.modal{
+  position:fixed; inset:0; margin:auto;
+  width:560px; max-width:92vw; height:auto; max-height:78vh;
+  background:#fff; z-index:100; border-radius:12px;
+  box-shadow:0 18px 48px rgba(0,0,0,.35);
+  display:flex; flex-direction:column;
 }
-.show-card-head{ padding:12px 14px; }
-.place{ font-weight:700; color:#0f172a; display:flex; align-items:center; gap:8px; }
-.place-dot{ font-size:16px; }
-.price-line{ color:#111827; margin-top:4px; font-size:14px; }
-
-/* Date bar */
-.show-card-body{ padding:0 14px 14px; }
-.date-bar{
-  margin-top:8px; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:8px;
-  display:flex; align-items:center; gap:10px; padding:8px 10px;
+.modal-head{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 14px; border-bottom:1px solid #e5e7eb;
 }
-.date-chip{ background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:6px 10px; font-size:14px; }
-.date-chip strong{ font-weight:700; }
-.grow{ flex:1; }
+.modal-title{ font-weight:800; font-size:15px; }
+.icon-close{ border:none; background:transparent; font-size:18px; cursor:pointer; }
+.modal-body{ padding:10px 12px 14px; overflow:auto; }
 
-/* Buttons & chips */
-.btn{ border:none; border-radius:10px; padding:10px 14px; cursor:pointer; }
-.btn.attendee{ background:#2563eb; color:#fff; font-weight:600; }
-.time-chip{ background:#ef4444; color:#fff; font-weight:700; border-radius:999px; padding:6px 12px; }
+/* Zone table (compact) */
+.zone-table{ border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; background:#fff; }
+.zone-table.compact .z-head{ padding:8px 10px; font-size:13px; background:#f3f4f6; font-weight:700; display:flex; justify-content:space-between;}
+.zone-table.compact .z-row{ padding:8px 10px; border-top:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center;}
+.z-name{ display:flex; flex-direction:column; gap:2px; }
+.z-price{ color:#6b7280; font-size:12px; }
+.z-qty{ font-weight:800; }
+.z-qty.ok{ color:#16a34a; } .z-qty.warn{ color:#f59e0b; } .z-qty.zero{ color:#ef4444; }
 
-/* Description card */
-.description{
-  background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px;
-  box-shadow:0 8px 20px rgba(0,0,0,.06); margin-top:12px;
-}
-.desc{ color:#111827; line-height:1.6; }
+/* Transitions */
+.pop-enter-from{ transform:scale(.96); opacity:0; }
+.pop-enter-to{ transform:scale(1); opacity:1; }
+.pop-enter-active{ transition:all .18s ease; }
+.pop-leave-from{ transform:scale(1); opacity:1; }
+.pop-leave-to{ transform:scale(.96); opacity:0; }
+.pop-leave-active{ transition:all .14s ease; }
 
-/* Responsive */
+.fade-enter-from,.fade-leave-to{ opacity:0; }
+.fade-enter-to,.fade-leave-from{ opacity:1; }
+.fade-enter-active,.fade-leave-active{ transition:opacity .2s ease; }
+
+/* รายละเอียดล่างหน้า */
+.detail-section{ margin-top:18px; }
+.detail-card{ background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; box-shadow:0 8px 18px rgba(0,0,0,.08); }
+.detail-body{ color:#0f172a; font-size:15.5px; line-height:1.85; }
+.detail-body.plain{ white-space:pre-line; }
+
 @media (max-width:1024px){
   .hero{ grid-template-columns:1fr; }
-  .info-grid{ grid-template-columns:1fr; }
+  .show-card.dark{ grid-template-columns:1fr; }
 }
 </style>
