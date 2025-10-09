@@ -4,7 +4,7 @@
     <header class="toolbar">
       <div class="page-title">Event details</div>
     </header>
-
+    
     <!-- HERO -->
     <section class="hero pastel">
       <img class="poster" :src="event.bannerUrl" alt="Event Banner" />
@@ -54,23 +54,20 @@
       </div>
     </section>
 
-    <!-- ผังการแสดง & รอบการแสดง -->
-    <section class="show-section">
-      <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
+      <!-- ผังการแสดง & รอบการแสดง -->
+<section class="stage" ref="stageSection" id="stage-section">
+    <h2 class="section-title">ผังการแสดง & รอบการแสดง</h2>
 
-      <div class="show-card dark">
-        <!-- ซ้าย: ผัง + โปสเตอร์ + pricing -->
-        <div class="show-media">
-          <div class="seatmap-wrap">
-            <img :src="event.seatmapUrl || event.bannerUrl" alt="Seatmap" class="seatmap-img" />
-            <img :src="event.bannerUrl" alt="Poster" class="poster-mini" />
-            <div class="legend-card" v-if="priceLegend.length">
-              <div class="legend-title">PRICING</div>
-              <div class="legend-line" v-for="p in priceLegend" :key="p">{{ p }}</div>
-            </div>
-          </div>
-        </div>
-
+    <div class="stage-card" :class="{ 'noimg': !hasSeatmap }">
+      <!-- ซ้าย: รูปผัง (เฉพาะมีผัง) -->
+      <img
+        v-if="hasSeatmap"
+        :src="event.seatmapUrl"
+        alt="Seat map"
+        class="seatmap"
+        @click="openSeatmap"
+      />
+      
         <!-- ขวา: ตารางวันที่ -->
         <div class="show-content">
           <div class="show-header">
@@ -181,7 +178,13 @@ const event = reactive({
 
 const modalOpen = ref(false);
 const selectedShowId = ref("");
+/* ========= รูป fallback ========= */
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
 
+/* ========= มีผังหรือไม่ ========= */
+const hasSeatmap = computed(() =>
+  !!event.seatmapUrl  && event.seatmapUrl  !== fallbackSeatmap
+)
 /* Utils */
 function fixThaiBuddhistYear(input){ if(!input)return null; const s=String(input).trim().replace(" ","T"); const m=s.match(/^(\d{4})-(\d{2})-(\d{2})(T(\d{2}):(\d{2}))?/); if(!m)return s; let y=parseInt(m[1],10); if(y>2400)y-=543; return y.toString().padStart(4,"0")+s.slice(4);}
 function toDate(v){ const iso=fixThaiBuddhistYear(v); return iso?new Date(iso):null;}
@@ -256,19 +259,59 @@ onMounted(async()=>{
   Object.assign(event, normalizeEvent(await res.json()));
   selectedShowId.value = event.sessions?.[0]?.id || "";
 });
+
 </script>
 
 <style scoped>
+.stage-card {
+  background: #000;
+  color: #ffffff;
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.25);
+}
+/* ===== Stage card (พื้นหลังดำ) ===== */
+.stage-card .venue-line {
+  color: #fff;                /* ให้ข้อความขาว */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.stage-card .venue-line .ic {
+  fill: #fff;                 /* บังคับให้ SVG icon เป็นขาว */
+  width: 20px;
+  height: 20px;
+}
+
+.stage { 
+  scroll-margin-top: 80px; /* ปรับตามความสูง header ถ้ามี */
+}
+
+/* ถ้าไม่มีผัง → เป็นคอลัมน์เดียว */
+.stage-card.noimg{
+  grid-template-columns: 1fr;
+}
+/* รูปผัง */
+.seatmap{
+  width:100%; height:170px; object-fit:cover; border-radius:8px; background:#1f2937;
+}
+
 /* Page */
 .event-detail-page{ padding:20px; background:#f6f8fb; }
 .toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .page-title{ font-size:22px; font-weight:400; color:#5f6063; }
 
 /* HERO */
-.hero{ display:grid; grid-template-columns:320px 1fr; gap:20px; background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); margin-bottom:16px; }
-.hero.pastel{ background:linear-gradient(90deg,#e6fff4 0%, #e3f6ff 100%); }
-.poster{ width:100%; aspect-ratio:420/594; object-fit:cover; background:#eee; }
-.category{ color:#6b7280; font-weight:700; margin-bottom:4px; }
+.hero{ display:grid; grid-template-columns:320px 1fr; background:#fff; border-radius:12px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); margin-bottom:16px; }
+.hero.pastel{ background:linear-gradient(90deg,#20f00d8f 10%, #4cf3ff6a 60%);}
+.hero-info{padding-top: 132px;}
+.poster{ width:90%; aspect-ratio:420/594; object-fit:cover; background:#eee; border-radius:12px;}
+.category{ color:#111; font-weight:700; margin-bottom:4px; }
 .event-name{ font-size:26px; font-weight:700; color:#111827; margin:0 0 10px; }
 .info-strip.pastel{ background:rgba(255,255,255,.85); border:1px solid #e5e7eb; border-radius:12px; padding:14px; }
 .info-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 18px; }
@@ -288,9 +331,9 @@ onMounted(async()=>{
 .legend-line:last-child{ border-bottom:none; }
 
 .show-content{ display:flex; flex-direction:column; gap:12px; }
-.show-header .place{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:18px; }
-.icon-pin{ width:22px; height:22px; fill:#ef4444; }
-.price-line{ margin-top:2px; color:#e5e7eb; }
+.show-header .place{ color:#ffff; display:flex; align-items:center; gap:8px; font-weight:800; font-size:18px; }
+.icon-pin{ width:22px; height:22px; fill:#ffff; }
+.price-line{ margin-top:2px; color:#ffff; }
 
 /* Date table */
 .date-table{ margin-top:6px; background:#fff; border-radius:10px; overflow:hidden; color:#111; }
@@ -301,10 +344,18 @@ onMounted(async()=>{
 .actions{ display:flex; align-items:center; gap:12px; }
 
 /* Buttons */
-.btn.attendee{ background:#1d4ed8; color:#fff; font-weight:800; border:none; border-radius:999px; padding:10px 18px; display:inline-flex; gap:8px; align-items:center; box-shadow:0 8px 18px rgba(29,78,216,.35); }
+.btn.attendee{ cursor: pointer;background:#1d4ed8; color:#fff; font-weight:800; border:none; border-radius:999px; padding:10px 18px; display:inline-flex; gap:8px; align-items:center; box-shadow:0 8px 18px rgba(29,78,216,.35); }
 .btn.attendee .icon-user{ width:18px; height:18px; fill:#fff; }
-.time-pill{ background:#ff6a00; color:#fff; font-weight:900; border:none; border-radius:999px; padding:10px 18px; box-shadow:0 8px 18px rgba(255,106,0,.35); }
-
+.time-pill{
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color: #fff;
+  font-weight: 900;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+}
 /* ===== Modal (กลางจอ) ===== */
 .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:90; }
 .modal{
@@ -316,9 +367,9 @@ onMounted(async()=>{
 }
 .modal-head{
   display:flex; align-items:center; justify-content:space-between;
-  padding:12px 14px; border-bottom:1px solid #e5e7eb;
+  padding:12px 20px; border-bottom:1px solid #e5e7eb;
 }
-.modal-title{ font-weight:800; font-size:15px; }
+.modal-title{padding-left: 220px; font-weight:800; font-size:16px; }
 .icon-close{ border:none; background:transparent; font-size:18px; cursor:pointer; }
 .modal-body{ padding:10px 12px 14px; overflow:auto; }
 
