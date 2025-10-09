@@ -1,4 +1,5 @@
 // cypress/e2e/admin-create-event.cy.js
+/// <reference types="cypress" />
 
 Cypress.on('uncaught:exception', () => false);
 
@@ -31,27 +32,11 @@ function uploadTinyPoster(selector = '.poster .upload input[type="file"]') {
 
 describe('Admin - Create Event', () => {
   beforeEach(() => {
-    // ✅ ทำให้เป็นสถานะ ADMIN ที่ล็อกอินแล้ว
-    cy.clearLocalStorage();
-    cy.window().then((win) => {
-      win.localStorage.setItem('token', 'fake.jwt');
-      win.localStorage.setItem(
-        'user',
-        JSON.stringify({ role: 'ADMIN', email: 'admin@example.com', name: 'Admin' })
-      );
-    });
-    cy.intercept('GET', '/api/auth/me', {
-      statusCode: 200,
-      body: { role: 'ADMIN', email: 'admin@example.com', name: 'Admin' },
-    }).as('me');
+    // ✅ ปลอมเป็น ADMIN ที่ล็อกอินแล้ว (กัน redirect ไปหน้า login)
+    cy.seedAdminAuth();
 
-    // ดัก POST ให้ครอบทุกกรณีไว้ก่อน (กันหลุด URL/ท้ายมี slash)
-    cy.intercept('POST', '**/api/events*', (req) => {
-      // เคสที่ไม่ได้ตั้ง as รายเคสจะมาชน route นี้
-    }).as('createEventGeneric');
-
-    // กัน noise อื่น ๆ ได้ถ้าจำเป็น
-    // cy.intercept('GET', '/api/events', { statusCode: 200, body: [] }).as('events');
+    // ✅ ดัก POST แบบครอบจักรวาล กันพลาด path
+    cy.intercept('POST', '**/api/**/events*').as('createEventGeneric');
 
     cy.visit('/admin/create');
     cy.location('pathname', { timeout: 10000 }).should('eq', '/admin/create');
@@ -120,7 +105,7 @@ describe('Admin - Create Event', () => {
 
   it('CE-007 กรอกครบและสร้างสำเร็จ (201 + Location header)', () => {
     // ตอบ 201 สำหรับเคสนี้
-    cy.intercept('POST', '**/api/events*', {
+    cy.intercept('POST', '**/api/**/events*', {
       statusCode: 201,
       headers: { Location: '/api/events/123' },
       body: {},
@@ -152,14 +137,14 @@ describe('Admin - Create Event', () => {
 
     cy.contains('button', 'สร้าง').click();
 
-    cy.wait('@createEvent'); // ✅ จะจับได้แล้วเพราะใช้ **/api/events*
+    cy.wait('@createEvent');
     cy.on('window:alert', (txt) => {
       expect(txt).to.contain('สร้างสำเร็จ! Event ID = 123');
     });
   });
 
   it('CE-008 backend error → โชว์ error alert', () => {
-    cy.intercept('POST', '**/api/events*', {
+    cy.intercept('POST', '**/api/**/events*', {
       statusCode: 500,
       body: 'Server Error',
     }).as('createFail');
@@ -189,7 +174,7 @@ describe('Admin - Create Event', () => {
 
     cy.contains('button', 'สร้าง').click();
 
-    cy.wait('@createFail'); // ✅ match ได้แน่
+    cy.wait('@createFail');
     cy.on('window:alert', (txt) => {
       expect(txt).to.match(/Create failed: 500/);
     });

@@ -24,10 +24,43 @@ function setValue(selector, value) {
 describe('Admin Edit Event – Comprehensive', () => {
 
   beforeEach(() => {
-    cy.intercept('GET', '/api/events/*').as('getEvent');
-    cy.visit('/admin/events/1/edit');
-    cy.wait('@getEvent');
-  });
+  // ✅ ปลอมว่าเป็น ADMIN ที่ล็อกอินแล้ว กัน redirect ไปหน้า login
+  cy.seedAdminAuth();
+
+  // ✅ ดัก GET event detail ให้ตรงกับของจริง (ใช้ pattern กว้าง ๆ)
+  cy.intercept('GET', '**/api/**/events/*', {
+    statusCode: 200,
+    body: {
+      id: 1,
+      title: 'MARIAH CAREY The Celebration of Mimi',
+      description: 'desc..',
+      category: 'concert',
+      location: 'Impact Arena',
+      startDate: '2025-10-28',        // YYYY-MM-DD
+      endDate: '2025-10-29',
+      status: 'OPEN',
+
+      saleStartAt: '2025-10-19T10:00:00',
+      saleEndAt:   '2025-10-25T18:00:00',
+      saleUntilSoldout: false,
+      doorOpenTime: '17:00',
+
+      posterImageUrl: '/images/poster.jpg',
+      detailImageUrl: null,
+      seatmapImageUrl: null,
+
+      sessions: [
+        { id: 101, name: 'Main Day', startTime: '18:00', status: 'OPEN' }
+      ],
+      zones: [
+        { id: 201, name: 'Zone A', capacity: 100, price: 2500 }
+      ],
+    }
+  }).as('getEvent');
+
+  cy.visit('/admin/events/1/edit');
+  cy.wait('@getEvent');
+});
 
   it('EVT-EDIT-001: Required validation fires', () => {
     setValue('[data-testid="event-name"]', '   ');
