@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref, nextTick } from 'vue'
-
+import  api  from "@/lib/api";
 // หุบ/ขยาย
 const open = reactive({ event: true, description: true, sessions: true, zones: true })
 const toggle = key => (open[key] = !open[key])
@@ -180,28 +180,26 @@ async function saveCreate() {
   }
 
   try {
-    const res = await fetch('/api/events', { method: 'POST', body: fd });
-    if (!res.ok) {
-      let msg = `Create failed: ${res.status}`;
-      try {
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const j = await res.json();
-          msg += ` — ${j.message || JSON.stringify(j)}`;
-        } else {
-          msg += ` — ${await res.text()}`;
-        }
-      } catch {}
-      throw new Error(msg);
-    }
+  const res = await api.post("/events", fd); 
+  
+  // อ่าน Location header (axios headers เป็น object ปกติ)
+  const loc = res.headers?.location || res.headers?.Location;
+  const id  = loc ? String(loc).split('/').pop() : null;
 
-    const loc = res.headers.get('Location');
-    const id = loc ? loc.split('/').pop() : null;
-    alert(`สร้างสำเร็จ! Event ID = ${id}`);
-  } catch (err) {
+  alert(`สร้างสำเร็จ! Event ID = ${id ?? '(ไม่พบ Location header)'}`);
+} catch (err) {
+  if (err.response) {
+    const { status, data, headers } = err.response;
+    const msg = typeof data === 'object'
+      ? (data.message ?? JSON.stringify(data))
+      : String(data ?? '');
+    console.error('Server error:', status, data, headers);
+    alert(`Create failed: ${status} — ${msg}`);
+  } else {
     console.error(err);
-    alert(err.message || 'เกิดข้อผิดพลาดระหว่างบันทึก');
+    alert('เกิดข้อผิดพลาดระหว่างบันทึก (network)');
   }
+}
 }
 
 

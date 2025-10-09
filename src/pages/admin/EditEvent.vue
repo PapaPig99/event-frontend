@@ -1,10 +1,11 @@
 <script setup>
-import { ref, reactive,nextTick, onMounted, watch ,computed, onUnmounted} from 'vue'
+import { ref, reactive, nextTick, onMounted, watch, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import api from "@/lib/api";
 
 const showError = ref(false)
 const errors = ref([])
-const alertRef = ref<HTMLElement|null>(null)
+const alertRef = ref < HTMLElement | null > (null)
 
 function validateForm() {
   const errs = []
@@ -109,7 +110,7 @@ const posterSrc = computed(() =>
 /*---------------- Detail ----------------*/
 function onDetailChange(e) {
   const f = e.target?.files?.[0] || null
-  form.detailImage = f  
+  form.detailImage = f
   if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
   detailObjUrl.value = f ? URL.createObjectURL(f) : null
   form.detailUrl = detailObjUrl.value
@@ -121,7 +122,7 @@ const detailSrc = computed(() =>
 /*---------------- Seatmap ----------------*/
 function onSeatmapChange(e) {
   const f = e.target?.files?.[0] || null
-  form.seatmapImage = f   
+  form.seatmapImage = f
   if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
   seatmapObjUrl.value = f ? URL.createObjectURL(f) : null
   form.seatmapUrl = seatmapObjUrl.value
@@ -182,10 +183,10 @@ const emptyRound = () => ({
   startTime: ''
 })
 const emptyZone = () => ({
-   zoneName: '',
-   capacity: '',
-   price:''
-  
+  zoneName: '',
+  capacity: '',
+  price: ''
+
 })
 // เติมวินาทีให้ 'YYYY-MM-DDTHH:mm' → '...:ss'
 function withSecDT(dt) {
@@ -222,18 +223,18 @@ onMounted(async () => {
     form.gateOpen = data.doorOpenTime || ''
 
     // รูปจาก API
-    form.posterUrl   = data.posterImageUrl || null
-    form.detailUrl   = data.detailImageUrl || null
-    form.seatmapUrl  = data.seatmapImageUrl || null
+    form.posterUrl = data.posterImageUrl || null
+    form.detailUrl = data.detailImageUrl || null
+    form.seatmapUrl = data.seatmapImageUrl || null
 
     // sessions -> rounds
     const sessions = Array.isArray(data.sessions) ? data.sessions : []
     form.rounds = sessions.length
       ? sessions.map(s => ({
-          id: s.id ?? null,
-          roundName: s.name ?? '',
-          startTime: (s.startTime || '').slice(0, 5),     
-        }))
+        id: s.id ?? null,
+        roundName: s.name ?? '',
+        startTime: (s.startTime || '').slice(0, 5),
+      }))
       : [emptyRound()]
     multiRounds.value = form.rounds.length > 1
 
@@ -241,11 +242,11 @@ onMounted(async () => {
     const zones = Array.isArray(data.zones) ? data.zones : []
     form.zones = zones.length
       ? zones.map(z => ({
-          id: z.id ?? null,
-          zoneName: z.name ?? '',
-          capacity: z.capacity ?? 0,
-          price: z.price ?? 0
-        }))
+        id: z.id ?? null,
+        zoneName: z.name ?? '',
+        capacity: z.capacity ?? 0,
+        price: z.price ?? 0
+      }))
       : [emptyZone()]
     multiZones.value = form.zones.length > 1
   } catch (e) {
@@ -318,7 +319,7 @@ function buildDto() {
     posterImageUrl: form.poster ? null : form.posterUrl,                   // required
     detailImageUrl: form.detailImage ? null : (form.detailUrl || null),
     seatmapImageUrl: form.seatmapImage ? null : (form.seatmapUrl || null),
-    createdByUserId:  1 ,  //1ไปก่อน ค่อยเปลี่ยน
+    createdByUserId: 1,  //1ไปก่อน ค่อยเปลี่ยน
 
     // sessions: ส่งเฉพาะที่มี startTime
     sessions: (form.rounds || [])
@@ -333,11 +334,11 @@ function buildDto() {
     // zones
     zones: (form.zones || [])
       .map(z => ({
-      id: z.id ?? null,
-      name: z.zoneName,
-      capacity: Number(z.capacity || 0),
-      price: Number(z.price || 0)
-    }))
+        id: z.id ?? null,
+        name: z.zoneName,
+        capacity: Number(z.capacity || 0),
+        price: Number(z.price || 0)
+      }))
   }
 }
 /* ---------- save (PUT) ---------- */
@@ -345,49 +346,50 @@ async function save() {
   try {
     saving.value = true
 
-     if (!validateForm()) {
-    await scrollAlertIntoView()
-    return
-  }
+    if (!validateForm()) {
+      await scrollAlertIntoView()
+      return
+    }
 
     const id = route.params.id
     const dto = buildDto()
 
     const fd = new FormData()
-    // data ต้องเป็น application/json ให้ Spring แปลงเป็น DTO
     fd.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }))
-    if (form.poster)      fd.append('poster',  form.poster)
-    if (form.detailImage) fd.append('detail',  form.detailImage)
-    if (form.seatmapImage)fd.append('seatmap', form.seatmapImage)
+    if (form.poster) fd.append('poster', form.poster)
+    if (form.detailImage) fd.append('detail', form.detailImage)
+    if (form.seatmapImage) fd.append('seatmap', form.seatmapImage)
 
-    const res = await fetch(`/api/events/${id}`, { method: 'PUT', body: fd })
-    if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    console.error('Server error body:', text)   
-    throw new Error(`Save failed: ${res.status}`)
-}
-
-
-    alert('บันทึกสำเร็จ')
-  } catch (e) {
-    console.error(e)
-    alert('บันทึกไม่สำเร็จ')
+    try {
+      // axios จะจัดการ Content-Type ให้อัตโนมัติ
+      await api.put(`/events/${id}`, fd)
+      alert('บันทึกสำเร็จ')
+    } catch (err) {
+      if (err.response) {
+        console.error('Server error:', err.response.status, err.response.data)
+        alert(`บันทึกไม่สำเร็จ (${err.response.status})`)
+      } else {
+        console.error(err)
+        alert('บันทึกไม่สำเร็จ (network)')
+      }
+    }
   } finally {
     saving.value = false
   }
 }
+
 
 </script>
 
 
 <template>
   <section class="edit-events">
-    
+
     <header class="toolbar">
       <!-- กล่องแจ้งเตือน -->
 
       <div class="title">Edit event</div>
-      
+
     </header>
     <!-- ข้อมูลอีเวนต์ -->
     <section class="card">
@@ -402,10 +404,10 @@ async function save() {
         <div class="grid">
           <!-- โปสเตอร์ -->
           <div class="poster">
-              <label class="uplabel">รูปโปสเตอร์</label>
-              <button v-if="form.posterUrl" class="text-del" type="button" @click="clearPoster"
-                aria-label="ลบรูปโปสเตอร์">✕</button>
-    
+            <label class="uplabel">รูปโปสเตอร์</label>
+            <button v-if="form.posterUrl" class="text-del" type="button" @click="clearPoster"
+              aria-label="ลบรูปโปสเตอร์">✕</button>
+
 
             <div class="upload" :style="{ aspectRatio: '420 / 594' }">
               <input type="file" accept="image/png, image/jpeg" @change="onPosterChange" />
@@ -422,14 +424,14 @@ async function save() {
           <div class="fields">
             <div class="row">
               <label>ชื่อ *</label>
-              <input class="inp"  :class="{ 'is-invalid': showError && !form.name?.trim() }"  v-model="form.name" placeholder="เช่น NCT Reboot Live" />
+              <input class="inp" :class="{ 'is-invalid': showError && !form.name?.trim() }" v-model="form.name"
+                placeholder="เช่น NCT Reboot Live" />
             </div>
 
             <div class="row two">
               <div>
                 <label>หมวดหมู่ *</label>
-                <select class="inp"  v-model="form.category"
-                 :class="{ 'is-invalid': showError && !form.category }">
+                <select class="inp" v-model="form.category" :class="{ 'is-invalid': showError && !form.category }">
                   <option value="">ยังไม่ได้เลือก</option>
                   <option value="concert">คอนเสิร์ต</option>
                   <option value="show">การแสดง</option>
@@ -456,8 +458,8 @@ async function save() {
               <div>
                 <label>วันที่และเวลาเปิดจำหน่าย *</label>
                 <div class="with-icon cal">
-                  <input class="inp"  type="datetime-local" v-model="form.regOpen"
-                     :class="{ 'is-invalid': showError && !form.regOpen }" />
+                  <input class="inp" type="datetime-local" v-model="form.regOpen"
+                    :class="{ 'is-invalid': showError && !form.regOpen }" />
 
                 </div>
               </div>
@@ -465,9 +467,9 @@ async function save() {
                 <label>วันที่และเวลาปิดจำหน่าย *</label>
                 <div class="inline">
                   <div class="with-icon cal grow">
-                    <input class="inp"  type="datetime-local" v-model="form.regClose"
-                     :class="{ 'is-invalid': showError && !form.saleNoEnd && !form.regClose }"
-                     :disabled="form.saleNoEnd" />
+                    <input class="inp" type="datetime-local" v-model="form.regClose"
+                      :class="{ 'is-invalid': showError && !form.saleNoEnd && !form.regClose }"
+                      :disabled="form.saleNoEnd" />
                   </div>
                   <label class="ck"><input type="checkbox" v-model="form.saleNoEnd" /> ปิดเมื่อบัตรหมด</label>
                 </div>
@@ -478,15 +480,15 @@ async function save() {
               <div>
                 <label>วันเริ่มจัดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp"    :class="{ 'is-invalid': showError && !form.startDate }"  
-                  type="date" v-model="form.startDate" />
+                  <input class="inp" :class="{ 'is-invalid': showError && !form.startDate }" type="date"
+                    v-model="form.startDate" />
                 </div>
               </div>
               <div>
                 <label>วันสิ้นสุดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp"  :class="{ 'is-invalid': showError && !form.endDate }"
-                   type="date" v-model="form.endDate" />
+                  <input class="inp" :class="{ 'is-invalid': showError && !form.endDate }" type="date"
+                    v-model="form.endDate" />
                 </div>
               </div>
             </div>
@@ -495,15 +497,15 @@ async function save() {
               <div>
                 <label>ที่ตั้ง *</label>
                 <div class="with-icon loc">
-                  <input class="inp"  :class="{ 'is-invalid': showError && !form.venue?.trim() }" 
-                  v-model="form.venue" placeholder="เช่น Impact Arena, Hall 9" />
+                  <input class="inp" :class="{ 'is-invalid': showError && !form.venue?.trim() }" v-model="form.venue"
+                    placeholder="เช่น Impact Arena, Hall 9" />
                 </div>
               </div>
               <div>
                 <label>เวลาประตูเปิด *</label>
                 <div class="with-icon time">
-                  <input class="inp"   :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }" 
-                  v-model="form.gateOpen" placeholder="เช่น 17:00" />
+                  <input class="inp" :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }"
+                    v-model="form.gateOpen" placeholder="เช่น 17:00" />
                 </div>
               </div>
             </div>
@@ -518,46 +520,46 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>รายละเอียดและรูปภาพ</h2>
-         <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
+        <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
 
       </header>
       <div v-show="open.description" class="card-body">
-      <div class="card-body">
-        <div class="stack">
-          <div class="row">
-            <label>คำอธิบาย</label>
-            <textarea class="inp" rows="4" v-model="form.description" placeholder="เล่ารายละเอียดเกี่ยวกับงาน" />
-          </div>
-
-          <div class="gallery two-col">
-            <div class="gallery-item">
-              <label class="uplabel">รูปภาพเพิ่มเติม</label>
-              <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
-                aria-label="ลบรูปโปสเตอร์">✕</button>
-              <div class="upload small">
-                <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" />
-                <div class="preview" v-if="form.detailUrl">
-                  <img v-if="detailSrc" :src="detailSrc" class="detail" />
-                </div>
-                <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
-              </div>
+        <div class="card-body">
+          <div class="stack">
+            <div class="row">
+              <label>คำอธิบาย</label>
+              <textarea class="inp" rows="4" v-model="form.description" placeholder="เล่ารายละเอียดเกี่ยวกับงาน" />
             </div>
 
-            <div class="gallery-item">
-              <label class="uplabel">ผังงาน/ผังที่นั่ง</label>
-              <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat"
-                aria-label="ลบรูปโปสเตอร์">✕</button>
-              <div class="upload small">
-                <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" />
-                <div class="preview" v-if="form.seatmapUrl">
-                  <img v-if="seatmapSrc" :src="seatmapSrc" class="detail" />
+            <div class="gallery two-col">
+              <div class="gallery-item">
+                <label class="uplabel">รูปภาพเพิ่มเติม</label>
+                <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
+                  aria-label="ลบรูปโปสเตอร์">✕</button>
+                <div class="upload small">
+                  <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" />
+                  <div class="preview" v-if="form.detailUrl">
+                    <img v-if="detailSrc" :src="detailSrc" class="detail" />
+                  </div>
+                  <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
                 </div>
-                <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
+              </div>
+
+              <div class="gallery-item">
+                <label class="uplabel">ผังงาน/ผังที่นั่ง</label>
+                <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat"
+                  aria-label="ลบรูปโปสเตอร์">✕</button>
+                <div class="upload small">
+                  <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" />
+                  <div class="preview" v-if="form.seatmapUrl">
+                    <img v-if="seatmapSrc" :src="seatmapSrc" class="detail" />
+                  </div>
+                  <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
     </section>
 
@@ -565,45 +567,44 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>โซนของงาน</h2>
-       <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
+        <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
 
       </header>
       <div v-show="open.zone" class="card-body">
         <div class="card-body">
-        <div class="pill-row">
-          <label class="pill">
-            <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)"/>
-            มีหลายโซน
-          </label>
-        </div>
-          
-         <div class="zones" v-if="form.zones.length" >
-          <div class="zones-head">
-            <div>ชื่อโซน</div>
-            <div>จำนวนที่นั่ง</div>
-            <div>ราคา</div>
-            <div></div>
+          <div class="pill-row">
+            <label class="pill">
+              <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)" />
+              มีหลายโซน
+            </label>
           </div>
 
-          <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
-            <input class="inp" v-model="z.zoneName" 
-            :class="{ 'is-invalid': showError && !z.zoneName?.trim() }"
-            placeholder="เช่น Zone A" required/>
+          <div class="zones" v-if="form.zones.length">
+            <div class="zones-head">
+              <div>ชื่อโซน</div>
+              <div>จำนวนที่นั่ง</div>
+              <div>ราคา</div>
+              <div></div>
+            </div>
 
-            <input class="inp num" type="number" min="0" v-model.number="z.capacity"
-            :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }" />
-            
-            <input class="inp num" type="number" min="0" step="100" v-model.number="z.price"  
-            :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }" />
-      
-            <button class="del" type="button" v-if="multiZones && form.zones.length > 1 && i !== 0"
-            @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+            <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
+              <input class="inp" v-model="z.zoneName" :class="{ 'is-invalid': showError && !z.zoneName?.trim() }"
+                placeholder="เช่น Zone A" required />
+
+              <input class="inp num" type="number" min="0" v-model.number="z.capacity"
+                :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }" />
+
+              <input class="inp num" type="number" min="0" step="100" v-model.number="z.price"
+                :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }" />
+
+              <button class="del" type="button" v-if="multiZones && form.zones.length > 1 && i !== 0"
+                @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+            </div>
+
+            <button class="addbar mt-3" type="button" v-if="multiZones" @click="addZone()">+ เพิ่มโซน</button>
           </div>
-
-          <button class="addbar mt-3" type="button"v-if="multiZones" @click="addZone()">+ เพิ่มโซน</button>
         </div>
-        </div>
-       </div>
+      </div>
     </section>
 
     <!-- รอบของงาน -->
@@ -615,49 +616,42 @@ async function save() {
       </header>
       <div v-show="open.session" class="card-body">
 
-      <div class="card-body">
-        <div class="pill-row">
-          <label class="pill">
-            <input type="checkbox" v-model="multiRounds" @change="onToggleMultiRounds(multiRounds)" />
-            อีเวนต์มีหลายวัน/หลายรอบ
-          </label>
-        </div>
-
-        <div class="rounds" v-if="form.rounds.length">
-          <div class="rounds-head">
-            <div>ชื่อรอบ</div>
-            <div>เวลาเริ่ม</div>
-            <div></div>
+        <div class="card-body">
+          <div class="pill-row">
+            <label class="pill">
+              <input type="checkbox" v-model="multiRounds" @change="onToggleMultiRounds(multiRounds)" />
+              อีเวนต์มีหลายวัน/หลายรอบ
+            </label>
           </div>
 
-          <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
-            <input class="inp" v-model="r.roundName"
-              :class="{ 'is-invalid': showError && !r.roundName?.trim() }"
-              :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
-            <input class="inp" :class="{ 'is-invalid': showError && !r.startTime }"
-            type="time" v-model="r.startTime" required />
-      
-            <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
-              @click="removeRound(i)" aria-label="ลบรอบ">✕</button>
-          </div>
+          <div class="rounds" v-if="form.rounds.length">
+            <div class="rounds-head">
+              <div>ชื่อรอบ</div>
+              <div>เวลาเริ่ม</div>
+              <div></div>
+            </div>
 
-          <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()">+ เพิ่มรอบ</button>
+            <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
+              <input class="inp" v-model="r.roundName" :class="{ 'is-invalid': showError && !r.roundName?.trim() }"
+                :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
+              <input class="inp" :class="{ 'is-invalid': showError && !r.startTime }" type="time" v-model="r.startTime"
+                required />
+
+              <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
+                @click="removeRound(i)" aria-label="ลบรอบ">✕</button>
+            </div>
+
+            <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()">+ เพิ่มรอบ</button>
+          </div>
         </div>
       </div>
-       </div>
     </section>
-      <div
-  v-if="showError"
-  ref="alertRef"
-  class="alert error"
-  role="alert"
-  aria-live="assertive"
->
-  <div class="alert-title">กรุณากรอกข้อมูลให้ครบถ้วน</div>
-  <ul class="alert-list">
-    <li v-for="(msg, i) in errors" :key="i">{{ msg }}</li>
-  </ul>
-</div>
+    <div v-if="showError" ref="alertRef" class="alert error" role="alert" aria-live="assertive">
+      <div class="alert-title">กรุณากรอกข้อมูลให้ครบถ้วน</div>
+      <ul class="alert-list">
+        <li v-for="(msg, i) in errors" :key="i">{{ msg }}</li>
+      </ul>
+    </div>
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
       <button class="btn primary" @click="save()">บันทึก</button>
@@ -846,7 +840,7 @@ button.chev {
 .zones-head,
 .zone-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 28px;  
+  grid-template-columns: 2fr 1fr 1fr 28px;
   gap: 12px;
   align-items: center;
 }
@@ -862,7 +856,7 @@ button.chev {
 
 .zones.is-single .zones-head,
 .zones.is-single .zone-row {
-  grid-template-columns: 2fr 1fr 1fr; 
+  grid-template-columns: 2fr 1fr 1fr;
 }
 
 /* ปุ่มลบกากบาทแดงด้านขวา */
@@ -1179,10 +1173,12 @@ button.chev {
   gap: 10px;
   margin-top: 14px;
 }
+
 /* ผู้ใช้ไม่กรอก*/
 .inp.is-invalid {
   border-color: #e0424a;
 }
+
 /* กล่องแจ้งเตือน */
 .alert {
   padding: 12px 14px;
@@ -1196,6 +1192,4 @@ button.chev {
   color: #7f1d1d;
   position: relative;
 }
-
-
 </style>
