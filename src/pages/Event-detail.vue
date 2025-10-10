@@ -146,6 +146,9 @@ function goToConcertPlan() {
   })
   sessionStorage.setItem(`eventLite:${id}`, JSON.stringify(eventLite))
 }
+function goToPayment() {
+  router.push({ name: 'payment', params: { id: route.params.id }, state: { order /* ข้อมูลที่เลือก */ } })
+}
 
 </script>
 

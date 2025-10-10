@@ -32,9 +32,8 @@ const selectedItems = computed(() =>
 )
 const canProceed = computed(() => selectedItems.value.length > 0)
 
-function goToPayment() {
+async function goToPayment() {
   if (selectedItems.value.length === 0) {
-    // แจ้งเตือน และเลื่อนจอไปโซนเลือกบัตร
     alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
     const zonesEl = document.querySelector('.zones')
     if (zonesEl) {
@@ -44,8 +43,53 @@ function goToPayment() {
     return
   }
 
-  
   const id = route.params.id
+
+  // ---------- หา sessionId ----------
+  let sessionId = sessionLabelToId?.value?.[selectedShow.value]
+
+  // Fallback 1: ถ้ามี sessionsRaw แค่ 1 รอบ → ใช้ id นั้นเลย
+  if (!sessionId && Array.isArray(sessionsRaw?.value) && sessionsRaw.value.length === 1) {
+    sessionId = sessionsRaw.value[0]?.id
+  }
+
+  // Fallback 2: ดึงจาก API แล้ว map label แบบเดียวกับที่ shows ใช้
+  if (!sessionId) {
+    try {
+      const res = await fetch(`/api/events/${id}`)
+      if (res.ok) {
+        const api = await res.json()
+        const toTimeLabel = (t)=> String(t||'').slice(0,5)
+        const toDateLabel = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+        const makeShowLabel = (dateIso, timeStr)=> `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
+        const d = api.startDate || api.start_date
+        const options = (api.sessions || []).map(s => ({
+          id: s.id,
+          label: makeShowLabel(d, s.start_time || s.startTime)
+        }))
+        const found = options.find(o => o.label === selectedShow.value)
+        sessionId = found?.id || options[0]?.id // เผื่อ label ไม่ตรง → เอาตัวแรก
+      }
+    } catch (e) {
+      console.warn('fallback fetch sessions failed', e)
+    }
+  }
+
+  if (!sessionId) {
+    alert('ไม่พบรอบการแสดง')
+    return
+  }
+
+  // ---------- ตรวจ zone/quantity ----------
+  const first = selectedItems.value[0]
+  const zoneId = first?.zoneId
+  const quantity = selectedItems.value.reduce((s, it) => s + Number(it.qty || 0), 0)
+  if (!zoneId || !quantity) {
+    alert('ข้อมูลโซน/จำนวนไม่ครบ')
+    return
+  }
+
+  // ---------- order (โชว์บนหน้า payment) ----------
   const order = {
     eventId: id,
     title: title.value,
@@ -55,9 +99,19 @@ function goToPayment() {
     fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10)
   }
 
-  router.push({ name: 'payment', params: { id }, state: { order } })
+  // ---------- draft (ยิง POST /registrations) ----------
+  const registrationDraft = {
+    eventId: Number(id),
+    sessionId: Number(sessionId),
+    zoneId: Number(zoneId),
+    quantity: Number(quantity),
+  }
+
+  router.push({ name: 'payment', params: { id }, state: { order, registrationDraft } })
   sessionStorage.setItem(`order:${id}`, JSON.stringify(order))
+  sessionStorage.setItem(`registrationDraft:${id}`, JSON.stringify(registrationDraft))
 }
+
 
 
 
@@ -116,6 +170,19 @@ onMounted(() => {
     shows.value       = Array.isArray(plan.shows) ? plan.shows : []
     selectedShow.value = plan.selectedShow || shows.value[0] || ''
   }
+  if (Array.isArray(plan.sessions) && plan.sessions.length) {
+  sessionsRaw.value = plan.sessions
+  const d = plan.startDate || plan.start_date || plan.startDateRaw
+  shows.value = plan.sessions.map(s => makeShowLabel(d, s.start_time || s.startTime))
+  // สร้าง map label -> id
+  sessionLabelToId.value = {}
+  plan.sessions.forEach(s => {
+    const label = makeShowLabel(d, s.start_time || s.startTime)
+    sessionLabelToId.value[label] = s.id
+  })
+  selectedShow.value ||= shows.value[0] || ''
+}
+
 
   // 🔽 เพิ่ม: อ่าน eventLite เพื่อตัดสินว่ามีผังไหม
   const lite = readEventLite(id)
@@ -214,13 +281,17 @@ onMounted(async () => {
     if (!poster.value) poster.value = api.posterImageUrl || api.detailImageUrl || fallbackPoster
     if (!shows.value?.length) {
       // สร้าง shows แบบง่ายจาก sessions
-      if (Array.isArray(api.sessions) && api.sessions.length) {
-        const toDate = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
-        const toTime = (t)=> String(t||'').slice(0,5)
-        const d = api.startDate || api.start_date
-        shows.value = api.sessions.map(s => `${toDate(d)} ${toTime(s.start_time || s.startTime)}`)
-        selectedShow.value = shows.value[0] || ''
-      }
+     if (Array.isArray(api.sessions) && api.sessions.length) {
+  sessionsRaw.value = api.sessions
+  const d = api.startDate || api.start_date
+  shows.value = api.sessions.map(s => makeShowLabel(d, s.start_time || s.startTime))
+  sessionLabelToId.value = {}
+  api.sessions.forEach(s => {
+    const label = makeShowLabel(d, s.start_time || s.startTime)
+    sessionLabelToId.value[label] = s.id
+  })
+  selectedShow.value = shows.value[0] || ''
+}
     }
 
     // ทำ zones
@@ -279,6 +350,16 @@ const availRows = computed(() =>
   }))
 )
 
+const sessionsRaw = ref([])             // เก็บ sessions ดิบไว้หาคู่กับ label
+const sessionLabelToId = ref({})        // map: label -> sessionId
+function toTimeLabel(t){ return String(t||'').slice(0,5) }
+function toDateLabel(iso){
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+}
+function makeShowLabel(dateIso, timeStr){
+  return `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
+}
 
 </script>
 

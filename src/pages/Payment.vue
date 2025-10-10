@@ -1,101 +1,137 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import qr from '@/assets/qrcode.png'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import api from '@/lib/api'
 
-/* ===== Router ===== */
-const router = useRouter()
+// รับ id จาก route เพื่อใช้ key เก็บ session
+const props = defineProps({ id: [String, Number] })
 const route  = useRoute()
+const router = useRouter()
 
-/* ===== ตัวอย่าง order (จะถูกแทนด้วย state/session ถ้ามี) ===== */
-const fallbackPoster =
-  'https://www.thaiticketmajor.com/img_poster/prefix_1/0273/6273/mariah-carey-the-celebration-of-mimi-68771ed9b6088-l.jpg'
+// === state
+const regId = ref(null)                    // id ของ registration ที่ backend คืนมา
+const creating = ref(false)
+const confirming = ref(false)
 
-const defaultOrder = {
-  eventId: route.params.id,
-  title: 'MARIAH CAREY The Celebration of Mimi',
-  poster: fallbackPoster,
-  show: 'Sat 11 Oct 2025 20:00',
-  items: [{ zoneId: 'D', zoneLabel: 'Zone D', unitPrice: 3500, qty: 1 }],
-  fee: 50
+// โหลด draft ที่ส่งมาจากหน้าก่อนหน้า
+function getDraft() {
+  const st = history.state?.registrationDraft
+  if (st && st.eventId && st.sessionId && st.zoneId && st.quantity) return st
+
+  // fallback
+  const raw = sessionStorage.getItem(`registrationDraft:${route.params.id}`)
+  if (!raw) return null
+  try {
+    const d = JSON.parse(raw)
+    if (d.eventId && d.sessionId && d.zoneId && d.quantity) return d
+  } catch {}
+  return null
 }
-const order = ref(defaultOrder)
 
-onMounted(() => {
+async function createRegistration() {
+  const draft = getDraft()
+  if (!draft) {
+    alert('ข้อมูลการเลือกไม่ครบ กรุณาเลือกที่นั่งใหม่')
+    router.replace({ name: 'concert-plan', params: { id: route.params.id } })
+    return
+  }
+
+  creating.value = true
+  try {
+    // ✅ payload ตรงกับ DTO ฝั่ง backend ของคุณ (ดูภาพ Postman)
+    const { data } = await api.post('/registrations', {
+      eventId: Number(draft.eventId),
+      sessionId: Number(draft.sessionId),
+      zoneId: Number(draft.zoneId),
+      quantity: Number(draft.quantity)
+    })
+    regId.value = Number(data?.id)
+    if (!regId.value) throw new Error('No registration id')
+  } catch (e) {
+    console.error('POST /registrations error:', e?.response?.status, e?.response?.data || e.message)
+    // 401/403 → ยังไม่ล็อกอิน/สิทธิ์ไม่ผ่าน
+    const s = e?.response?.status
+    if (s === 401 || s === 403) {
+      router.replace({ name: 'home', query: { login: 1, redirect: route.fullPath } })
+      return
+    }
+    alert('ไม่สามารถเริ่มการจองได้ กรุณาลองใหม่')
+    // กลับไปหน้าเลือกเพื่อให้ผู้ใช้เลือกใหม่
+    router.replace({ name: 'concert-plan', params: { id: route.params.id } })
+  } finally {
+    creating.value = false
+  }
+}
+
+async function confirmPayment() {
+  if (!regId.value) {
+    alert('ยังไม่ได้เริ่มการจอง กรุณาลองใหม่')
+    return
+  }
+  confirming.value = true
+  try {
+    const { data } = await api.patch(`/registrations/${regId.value}/confirm`, {
+      paymentReference: `QR-${Date.now()}`
+    })
+    // ล้าง draft
+    sessionStorage.removeItem(`registrationDraft:${route.params.id}`)
+    router.replace({ name: 'ticket-success', params: { id: route.params.id }, state: { reg: data } })
+  } catch (e) {
+    console.error('PATCH /confirm error:', e?.response?.status, e?.response?.data || e.message)
+    alert('ยืนยันการจ่ายไม่สำเร็จ กรุณาลองใหม่')
+  } finally {
+    confirming.value = false
+  }
+}
+
+const fallbackPoster = new URL('../assets/poster-fallback.jpg', import.meta.url).href
+const order = ref({
+  eventId: Number(route.params.id),
+  title: '',
+  poster: fallbackPoster,
+  show: '',
+  items: [],
+  fee: 0,
+})
+function loadOrder() {
   const st = history.state?.order
   if (st && typeof st === 'object') {
-    order.value = { ...defaultOrder, ...st }
-  } else {
+    order.value = {
+      eventId: st.eventId ?? Number(route.params.id),
+      title: st.title ?? '',
+      poster: st.poster || fallbackPoster,
+      show: st.show ?? '',
+      items: Array.isArray(st.items) ? st.items : [],
+      fee: Number(st.fee || 0),
+    }
+    return
+  }
+  try {
     const raw = sessionStorage.getItem(`order:${route.params.id}`)
     if (raw) {
-      try { order.value = { ...defaultOrder, ...JSON.parse(raw) } } catch {}
+      const o = JSON.parse(raw)
+      order.value = {
+        eventId: o.eventId ?? Number(route.params.id),
+        title: o.title ?? '',
+        poster: o.poster || fallbackPoster,
+        show: o.show ?? '',
+        items: Array.isArray(o.items) ? o.items : [],
+        fee: Number(o.fee || 0),
+      }
     }
-  }
-  startTimer()
+  } catch {}
+}
+const fee = computed(() => Number(order.value.fee || 0))
+const grandTotal = computed(() =>
+  Number(order.value.items?.reduce((s, it) => s + Number(it.unitPrice||0) * Number(it.qty||0), 0) || 0) + fee.value
+)
+
+onMounted(() => {
+  loadOrder()
+  createRegistration()
 })
-onUnmounted(() => clearTimer())
-
-/* ===== เงิน ===== */
-const subtotal   = computed(() => order.value.items.reduce((s, it) => s + it.unitPrice * it.qty, 0))
-const fee        = computed(() => Number(order.value.fee || 0))
-const grandTotal = computed(() => subtotal.value + fee.value)
-function formatTHB(n){ return n.toLocaleString('en-US') + ' THB' }
-
-/* ===== จ่ายเงิน (mock) ===== */
-async function confirmPayment() {
-  clearTimer()
-  alert('ยืนยันการจ่าย (ตัวอย่าง) — เตรียมส่ง payload ไป API')
-  // TODO: เรียก API จริง แล้วค่อยนำทางไปหน้าสลิป/สำเร็จ
-}
-
-/* ===== ยกเลิก & นับถอยหลัง 10 นาที ===== */
-const HOLD_MINUTES = 10
-const remainingSec = ref(HOLD_MINUTES * 60)
-let timerId = null
-
-const mmss = computed(() => {
-  const m = String(Math.floor(remainingSec.value / 60)).padStart(2, '0')
-  const s = String(remainingSec.value % 60).padStart(2, '0')
-  return `${m}:${s}`
-})
-
-function startTimer() {
-  if (timerId) return
-  timerId = window.setInterval(() => {
-    if (remainingSec.value > 0) {
-      remainingSec.value--
-    } else {
-      handleTimeout()   // << ใช้ modal แทน alert
-    }
-  }, 1000)
-}
-
-function clearTimer() {
-  if (timerId) {
-    clearInterval(timerId)
-    timerId = null
-  }
-}
-function cancelOrder() {
-  clearTimer()
-  // TODO: แจ้ง API ให้ปลด hold ถ้ามี
-  router.replace({ name: 'home' })
-}
-
-// ===== Timeout Modal =====
-const isTimeoutOpen = ref(false)
-
-function handleTimeout() {
-  clearTimer()
-  isTimeoutOpen.value = true
-}
-
-function goHomeAfterTimeout() {
-  isTimeoutOpen.value = false
-  router.replace({ name: 'home' })
-}
-
 </script>
+
 
 <template>
   <div class="payment-page">
