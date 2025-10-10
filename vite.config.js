@@ -5,10 +5,10 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   plugins: [vue()],
    server: {
-    proxy: {
-      '/api':    { target: 'http://localhost:3137', changeOrigin: true },
-      '/images': { target: 'http://localhost:3137', changeOrigin: true }
-    }
+   proxy: {
+    '/api':    { target: 'http://localhost:8081', changeOrigin: true },
+    '/images': { target: 'http://localhost:8081', changeOrigin: true }
+  }
   },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) }
