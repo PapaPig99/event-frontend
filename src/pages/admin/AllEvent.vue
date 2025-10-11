@@ -60,6 +60,8 @@ import { ref, computed, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import EventColumnHead from "@/components/EventColumnHead.vue"
 import EventCardAdmin from '@/components/EventCardAdmin.vue'
+import  api  from "@/lib/api";
+
 
 const router = useRouter()
 const events = ref([])
@@ -88,9 +90,8 @@ async function onRemove(id) {
   if (!confirm("คุณต้องการลบอีเวนต์นี้ใช่หรือไม่?")) return
 
   try {
-    const res = await fetch(`/api/events/${id}`, { method: "DELETE" })
-    if (!res.ok) throw new Error("ลบไม่สำเร็จ")
-    // ลบออกจาก state ทันที
+    const res = await api.delete(`/api/events/${id}`);
+    if (res.status !== 200) throw new Error("ลบไม่สำเร็จ")
     events.value = events.value.filter(ev => ev.id !== id)
     alert("ลบอีเวนต์เรียบร้อยแล้ว")
   } catch (err) {
