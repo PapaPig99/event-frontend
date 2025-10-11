@@ -90,8 +90,7 @@ async function onRemove(id) {
   if (!confirm("คุณต้องการลบอีเวนต์นี้ใช่หรือไม่?")) return
 
   try {
-    const res = await api.delete(`/api/events/${id}`);
-    if (res.status !== 200) throw new Error("ลบไม่สำเร็จ")
+    await api.delete(`/events/${id}`)   
     events.value = events.value.filter(ev => ev.id !== id)
     alert("ลบอีเวนต์เรียบร้อยแล้ว")
   } catch (err) {
@@ -99,6 +98,7 @@ async function onRemove(id) {
     alert("ไม่สามารถลบอีเวนต์ได้")
   }
 }
+
 
 
 const qConcert = ref("")
