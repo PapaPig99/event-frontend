@@ -1,16 +1,15 @@
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, nextTick, onMounted, watch, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from "@/lib/api";
 
 const showError = ref(false)
-const errors = ref([])
-const alertRef = ref < HTMLElement | null > (null)
+const errors = ref<string[]>([])
+const alertRef = ref<HTMLElement | null>(null)
 
 function validateForm() {
-  const errs = []
+  const errs: string[] = []
 
-  // ฟิลด์บังคับ
   if (!form.poster && !form.posterUrl) errs.push('กรุณาอัปโหลดรูปโปสเตอร์')
   if (!form.name?.trim()) errs.push('กรุณากรอกชื่ออีเวนต์')
   if (!form.category) errs.push('กรุณาเลือกหมวดหมู่')
@@ -20,7 +19,6 @@ function validateForm() {
   if (!form.endDate) errs.push('กรุณากรอกวันสิ้นสุดงาน')
   if (!form.venue?.trim()) errs.push('กรุณากรอกสถานที่จัดงาน')
 
-  // rounds (อย่างน้อย 1 และต้องมีเวลาเริ่ม)
   if (!form.rounds?.length) {
     errs.push('กรุณาเพิ่มรอบงานอย่างน้อย 1 รอบ')
   } else {
@@ -29,7 +27,6 @@ function validateForm() {
     })
   }
 
-  // zones (อย่างน้อย 1 แถว + ชื่อ/จำนวน/ราคา)
   if (!form.zones?.length) {
     errs.push('กรุณาเพิ่มโซนอย่างน้อย 1 โซน')
   } else {
@@ -49,89 +46,68 @@ async function scrollAlertIntoView() {
   await nextTick()
   alertRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
 /* ---------- หุบ/ขยาย ---------- */
 const open = reactive({ event: true, description: true, sessions: true, zones: true })
-const toggle = key => (open[key] = !open[key])
+const toggle = (key: keyof typeof open) => (open[key] = !open[key])
 
-/* ---------- แปลงวันที่ พ.ศ. -> ค.ศ. ---------- */
-function thaiDateToISODate(thai) {
+/* ---------- helper แปลงวันที่ ---------- */
+function thaiDateToISODate(thai?: string) {
   if (!thai) return ''
   const [y, m, d] = thai.split('-')
   const year = Number(y) > 2400 ? Number(y) - 543 : Number(y)
   return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
-function thaiDateTimeToISOLocal(thaiDT) {
+function thaiDateTimeToISOLocal(thaiDT?: string) {
   if (!thaiDT) return ''
   const [datePart, timeRaw] = thaiDT.split('T')
   const dateISO = thaiDateToISODate(datePart)
-  const time = (timeRaw || '').slice(0, 5) // HH:mm
+  const time = (timeRaw || '').slice(0, 5)
   return `${dateISO}T${time}`
 }
 
-/* ---------- รองรับข้อมูลที่ไม่มี(/images/ prefix)  ---------- */
-function resolveImage(filename) {
+/* ---------- รูป ---------- */
+function resolveImage(filename?: string | null) {
   if (!filename) return ""
   if (/^https?:\/\//i.test(filename)) return filename
-
-  // ถ้า backend ส่ง "/images/xxx.png" อยู่แล้ว → ใช้เลย
   if (filename.startsWith("/images/")) return filename
-
-  // ถ้าเป็นชื่อไฟล์เปล่า → เติม /images/ ให้
   return `/images/${filename.replace(/^\/+/, "")}`
 }
+function clearPoster() { form.posterUrl = null }
+function clearDetail() { form.detailUrl = null }
+function clearSeat()   { form.seatmapUrl = null }
 
-/*------- ลบรูป --------- */
-function clearPoster() {
-  form.posterUrl = null
-}
-function clearDetail() {
-  form.detailUrl = null
-}
-function clearSeat() {
-  form.seatmapUrl = null
-}
-/*------- เปลี่ยนรูป --------- */
-const posterObjUrl = ref(null)
-const detailObjUrl = ref(null)
-const seatmapObjUrl = ref(null)
+const posterObjUrl = ref<string | null>(null)
+const detailObjUrl = ref<string | null>(null)
+const seatmapObjUrl = ref<string | null>(null)
 
-/*---------------- Poster ----------------*/
-function onPosterChange(e) {
-  const f = e.target?.files?.[0] || null
+function onPosterChange(e: Event) {
+  const f = (e.target as HTMLInputElement)?.files?.[0] || null
   form.poster = f
   if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
   posterObjUrl.value = f ? URL.createObjectURL(f) : null
   form.posterUrl = posterObjUrl.value
 }
-const posterSrc = computed(() =>
-  form.poster ? posterObjUrl.value : resolveImage(form.posterUrl)
-)
+const posterSrc = computed(() => form.poster ? posterObjUrl.value : resolveImage(form.posterUrl))
 
-/*---------------- Detail ----------------*/
-function onDetailChange(e) {
-  const f = e.target?.files?.[0] || null
+function onDetailChange(e: Event) {
+  const f = (e.target as HTMLInputElement)?.files?.[0] || null
   form.detailImage = f
   if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
   detailObjUrl.value = f ? URL.createObjectURL(f) : null
   form.detailUrl = detailObjUrl.value
 }
-const detailSrc = computed(() =>
-  form.detailImage ? detailObjUrl.value : resolveImage(form.detailUrl)
-)
+const detailSrc = computed(() => form.detailImage ? detailObjUrl.value : resolveImage(form.detailUrl))
 
-/*---------------- Seatmap ----------------*/
-function onSeatmapChange(e) {
-  const f = e.target?.files?.[0] || null
+function onSeatmapChange(e: Event) {
+  const f = (e.target as HTMLInputElement)?.files?.[0] || null
   form.seatmapImage = f
   if (seatmapObjUrl.value) URL.revokeObjectURL(seatmapObjUrl.value)
   seatmapObjUrl.value = f ? URL.createObjectURL(f) : null
   form.seatmapUrl = seatmapObjUrl.value
 }
-const seatmapSrc = computed(() =>
-  form.seatmapImage ? seatmapObjUrl.value : resolveImage(form.seatmapUrl)
-)
+const seatmapSrc = computed(() => form.seatmapImage ? seatmapObjUrl.value : resolveImage(form.seatmapUrl))
 
-/*---------------- Cleanup ----------------*/
 onUnmounted(() => {
   if (posterObjUrl.value) URL.revokeObjectURL(posterObjUrl.value)
   if (detailObjUrl.value) URL.revokeObjectURL(detailObjUrl.value)
@@ -139,63 +115,49 @@ onUnmounted(() => {
 })
 
 /* ---------- form ---------- */
-const form = reactive({
-  // รูป (URL เดิม/พรีวิว)
+const form = reactive<any>({
   posterUrl: null,
   detailUrl: null,
   seatmapUrl: null,
 
-  // core fields (ตรงกับ template เดิมของพ้ม)
   name: '',
   category: '',
   organizer: '',
   type: 'offline',
-  status: false,            // true = OPEN
-  regOpen: '',              // 'YYYY-MM-DDTHH:mm'
-  regClose: '',             // 'YYYY-MM-DDTHH:mm'
+  status: false,
+  regOpen: '',
+  regClose: '',
   saleNoEnd: false,
-  startDate: '',            // 'YYYY-MM-DD'
-  endDate: '',              // 'YYYY-MM-DD'
+  startDate: '',
+  endDate: '',
   venue: '',
   address: '',
-  gateOpen: '',             // 'HH:mm' หรือข้อความอิสระ
+  gateOpen: '',
   ageLimit: '',
   description: '',
 
-  // ไฟล์ใหม่ (ถ้ามีผู้ใช้อัปโหลดในหน้า Edit)
-  poster: null,             // File|null
-  detailImage: null,        // File|null
-  seatmapImage: null,       // File|null
+  poster: null,
+  detailImage: null,
+  seatmapImage: null,
 
-  // sessions/rounds
   rounds: [],
-  // zones
   zones: [],
 })
+
 const route = useRoute()
 const multiRounds = ref(false)
 const multiZones = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 
-const emptyRound = () => ({
-  roundName: '',
-  startTime: ''
-})
-const emptyZone = () => ({
-  zoneName: '',
-  capacity: '',
-  price: ''
+const emptyRound = () => ({ roundName: '', startTime: '' })
+const emptyZone  = () => ({ zoneName: '', capacity: '', price: '' })
 
-})
-// เติมวินาทีให้ 'YYYY-MM-DDTHH:mm' → '...:ss'
-function withSecDT(dt) {
+function withSecDT(dt?: string | null) {
   if (!dt) return null
   return dt.length === 16 ? dt + ':00' : dt
 }
-
-// เติมวินาทีให้ 'HH:mm' → 'HH:mm:00'; ถ้าไม่ใช่เวลา ให้คงข้อความเดิม
-function withSec(t) {
+function withSec(t?: string | null) {
   if (!t) return null
   return /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : t
 }
@@ -209,44 +171,31 @@ onMounted(async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
 
-    // event
     form.name = data.title ?? ''
     form.category = data.category ?? ''
     form.venue = data.location ?? ''
     form.description = data.description ?? ''
     form.startDate = thaiDateToISODate(data.startDate)
-    form.endDate = thaiDateToISODate(data.endDate)
-    form.status = (data.status === 'OPEN')
-    form.regOpen = thaiDateTimeToISOLocal(data.saleStartAt)
+    form.endDate   = thaiDateToISODate(data.endDate)
+    form.status    = (data.status === 'OPEN')
+    form.regOpen   = thaiDateTimeToISOLocal(data.saleStartAt)
     form.saleNoEnd = !!data.saleUntilSoldout
-    form.regClose = form.saleNoEnd ? '' : thaiDateTimeToISOLocal(data.saleEndAt)
-    form.gateOpen = data.doorOpenTime || ''
+    form.regClose  = form.saleNoEnd ? '' : thaiDateTimeToISOLocal(data.saleEndAt)
+    form.gateOpen  = data.doorOpenTime || ''
 
-    // รูปจาก API
-    form.posterUrl = data.posterImageUrl || null
-    form.detailUrl = data.detailImageUrl || null
+    form.posterUrl  = data.posterImageUrl || null
+    form.detailUrl  = data.detailImageUrl || null
     form.seatmapUrl = data.seatmapImageUrl || null
 
-    // sessions -> rounds
     const sessions = Array.isArray(data.sessions) ? data.sessions : []
     form.rounds = sessions.length
-      ? sessions.map(s => ({
-        id: s.id ?? null,
-        roundName: s.name ?? '',
-        startTime: (s.startTime || '').slice(0, 5),
-      }))
+      ? sessions.map((s: any) => ({ id: s.id ?? null, roundName: s.name ?? '', startTime: (s.startTime || '').slice(0,5) }))
       : [emptyRound()]
     multiRounds.value = form.rounds.length > 1
 
-    // zones
     const zones = Array.isArray(data.zones) ? data.zones : []
     form.zones = zones.length
-      ? zones.map(z => ({
-        id: z.id ?? null,
-        zoneName: z.name ?? '',
-        capacity: z.capacity ?? 0,
-        price: z.price ?? 0
-      }))
+      ? zones.map((z: any) => ({ id: z.id ?? null, zoneName: z.name ?? '', capacity: z.capacity ?? 0, price: z.price ?? 0 }))
       : [emptyZone()]
     multiZones.value = form.zones.length > 1
   } catch (e) {
@@ -258,7 +207,7 @@ onMounted(async () => {
 })
 
 /* ---------- rounds ops ---------- */
-function onToggleMultiRounds(v) {
+function onToggleMultiRounds(v: any) {
   const val = typeof v === 'object' && v?.value !== undefined ? v.value : !!v
   if (val) {
     if (form.rounds.length === 1) form.rounds.push(emptyRound())
@@ -266,21 +215,12 @@ function onToggleMultiRounds(v) {
     form.rounds = [form.rounds[0] ?? emptyRound()]
   }
 }
-// ป้องกันกรณีลืมส่ง .value ใน template
 watch(multiRounds, (val) => onToggleMultiRounds(val))
-
-function addRound() {
-  form.rounds.push(emptyRound())
-  multiRounds.value = form.rounds.length > 1
-}
-function removeRound(i) {
-  if (form.rounds.length <= 1) return
-  form.rounds.splice(i, 1)
-  multiRounds.value = form.rounds.length > 1
-}
+function addRound()    { form.rounds.push(emptyRound()); multiRounds.value = form.rounds.length > 1 }
+function removeRound(i: number) { if (form.rounds.length <= 1) return; form.rounds.splice(i,1); multiRounds.value = form.rounds.length > 1 }
 
 /* ---------- zones ops ---------- */
-function onToggleMultiZones(v) {
+function onToggleMultiZones(v: any) {
   const val = typeof v === 'object' && v?.value !== undefined ? v.value : !!v
   if (val) {
     if (form.zones.length === 1) form.zones.push(emptyZone())
@@ -288,18 +228,11 @@ function onToggleMultiZones(v) {
     form.zones = [form.zones[0] ?? emptyZone()]
   }
 }
-// ป้องกันกรณีลืมส่ง .value ใน template
 watch(multiZones, (val) => onToggleMultiZones(val))
-function addZone() {
-  form.zones.push(emptyZone())
-  multiZones.value = form.zones.length > 1
-}
-function removeZone(i) {
-  form.zones.splice(i, 1)
-  multiZones.value = form.zones.length > 1
-}
+function addZone()      { form.zones.push(emptyZone()); multiZones.value = form.zones.length > 1 }
+function removeZone(i: number) { form.zones.splice(i,1); multiZones.value = form.zones.length > 1 }
 
-/* ---------- mapping form -> DTO (สำหรับ @RequestPart("data")) ---------- */
+/* ---------- mapping ---------- */
 function buildDto() {
   return {
     title: form.name,
@@ -310,61 +243,51 @@ function buildDto() {
     endDate: form.endDate || null,
     status: form.status ? 'OPEN' : 'CLOSED',
 
-    saleStartAt: withSecDT(form.regOpen),                                  // required
+    saleStartAt: withSecDT(form.regOpen),
     saleEndAt: form.saleNoEnd ? null : (form.regClose ? withSecDT(form.regClose) : null),
     saleUntilSoldout: !!form.saleNoEnd,
     doorOpenTime: form.gateOpen || null,
 
-    // รูป: ถ้าอัปใหม่ -> ให้ backend จัดการจากไฟล์; ถ้าไม่อัป -> ส่ง URL เดิม
-    posterImageUrl: form.poster ? null : form.posterUrl,                   // required
+    posterImageUrl: form.poster ? null : form.posterUrl,
     detailImageUrl: form.detailImage ? null : (form.detailUrl || null),
     seatmapImageUrl: form.seatmapImage ? null : (form.seatmapUrl || null),
-    createdByUserId: 1,  //1ไปก่อน ค่อยเปลี่ยน
+    createdByUserId: 1,
 
-    // sessions: ส่งเฉพาะที่มี startTime
-    sessions: (form.rounds || [])
-      .filter(r => !!r.startTime)
-      .map(r => ({
-        id: r.id ?? null,
-        name: r.roundName,
-        startTime: withSec(r.startTime),
-        status: 'OPEN',
-      })),
-
-    // zones
-    zones: (form.zones || [])
-      .map(z => ({
-        id: z.id ?? null,
-        name: z.zoneName,
-        capacity: Number(z.capacity || 0),
-        price: Number(z.price || 0)
-      }))
+    sessions: (form.rounds || []).filter((r: any) => !!r.startTime).map((r: any) => ({
+      id: r.id ?? null,
+      name: r.roundName,
+      startTime: withSec(r.startTime),
+      status: 'OPEN',
+    })),
+    zones: (form.zones || []).map((z: any) => ({
+      id: z.id ?? null,
+      name: z.zoneName,
+      capacity: Number(z.capacity || 0),
+      price: Number(z.price || 0),
+    })),
   }
 }
-/* ---------- save (PUT) ---------- */
+
+/* ---------- save ---------- */
 async function save() {
   try {
     saving.value = true
-
     if (!validateForm()) {
       await scrollAlertIntoView()
       return
     }
-
     const id = route.params.id
     const dto = buildDto()
-
     const fd = new FormData()
     fd.append('data', new Blob([JSON.stringify(dto)], { type: 'application/json' }))
-    if (form.poster) fd.append('poster', form.poster)
-    if (form.detailImage) fd.append('detail', form.detailImage)
-    if (form.seatmapImage) fd.append('seatmap', form.seatmapImage)
+    if (form.poster)      fd.append('poster',  form.poster)
+    if (form.detailImage) fd.append('detail',  form.detailImage)
+    if (form.seatmapImage)fd.append('seatmap', form.seatmapImage)
 
     try {
-      // axios จะจัดการ Content-Type ให้อัตโนมัติ
       await api.put(`/events/${id}`, fd)
       alert('บันทึกสำเร็จ')
-    } catch (err) {
+    } catch (err: any) {
       if (err.response) {
         console.error('Server error:', err.response.status, err.response.data)
         alert(`บันทึกไม่สำเร็จ (${err.response.status})`)
@@ -378,39 +301,35 @@ async function save() {
   }
 }
 
-
+/* ---------- misc ---------- */
+function onCancel() {
+  history.back()
+}
 </script>
 
-
 <template>
-  <section class="edit-events">
-
+  <section class="edit-events" data-testid="edit-events-root">
     <header class="toolbar">
-      <!-- กล่องแจ้งเตือน -->
-
       <div class="title">Edit event</div>
-
     </header>
+
     <!-- ข้อมูลอีเวนต์ -->
     <section class="card">
       <header class="card-head accent">
         <h2>ข้อมูลอีเวนต์</h2>
-        <button class="chev" :class="{ open: open.event }" @click="toggle('event')">▲
-        </button>
+        <button class="chev" :class="{ open: open.event }" @click="toggle('event')" data-testid="tog-event">▲</button>
       </header>
 
       <div v-show="open.event" class="card-body" v-if="!loading">
-        <!-- รายละเอียดหลัก -->
         <div class="grid">
           <!-- โปสเตอร์ -->
           <div class="poster">
             <label class="uplabel">รูปโปสเตอร์</label>
             <button v-if="form.posterUrl" class="text-del" type="button" @click="clearPoster"
-              aria-label="ลบรูปโปสเตอร์">✕</button>
-
+              aria-label="ลบรูปโปสเตอร์" data-testid="poster-clear">✕</button>
 
             <div class="upload" :style="{ aspectRatio: '420 / 594' }">
-              <input type="file" accept="image/png, image/jpeg" @change="onPosterChange" />
+              <input type="file" accept="image/png, image/jpeg" @change="onPosterChange" data-testid="poster-input" />
               <div class="preview" v-if="form.posterUrl">
                 <img v-if="posterSrc" :src="posterSrc" class="poster" />
               </div>
@@ -418,20 +337,26 @@ async function save() {
             </div>
           </div>
 
-
-
           <!-- ฟิลด์ข้อความ -->
           <div class="fields">
             <div class="row">
               <label>ชื่อ *</label>
-              <input class="inp" :class="{ 'is-invalid': showError && !form.name?.trim() }" v-model="form.name"
+              <input
+                data-testid="event-name"
+                class="inp"
+                :class="{ 'is-invalid': showError && !form.name?.trim() }"
+                v-model="form.name"
                 placeholder="เช่น NCT Reboot Live" />
             </div>
 
             <div class="row two">
               <div>
                 <label>หมวดหมู่ *</label>
-                <select class="inp" v-model="form.category" :class="{ 'is-invalid': showError && !form.category }">
+                <select
+                  data-testid="event-category"
+                  class="inp"
+                  v-model="form.category"
+                  :class="{ 'is-invalid': showError && !form.category }">
                   <option value="">ยังไม่ได้เลือก</option>
                   <option value="concert">คอนเสิร์ต</option>
                   <option value="show">การแสดง</option>
@@ -446,7 +371,7 @@ async function save() {
                 <div class="status-line">
                   <span :class="['status-tag', !form.status && 'is-active']">ปิดใช้งาน</span>
                   <label class="switch">
-                    <input type="checkbox" v-model="form.status" />
+                    <input type="checkbox" v-model="form.status" data-testid="status-toggle" />
                     <span class="slider"></span>
                   </label>
                   <span :class="['status-tag', form.status && 'is-active']">เผยแพร่</span>
@@ -458,20 +383,30 @@ async function save() {
               <div>
                 <label>วันที่และเวลาเปิดจำหน่าย *</label>
                 <div class="with-icon cal">
-                  <input class="inp" type="datetime-local" v-model="form.regOpen"
+                  <input
+                    data-testid="sale-open"
+                    class="inp"
+                    type="datetime-local"
+                    v-model="form.regOpen"
                     :class="{ 'is-invalid': showError && !form.regOpen }" />
-
                 </div>
               </div>
               <div>
                 <label>วันที่และเวลาปิดจำหน่าย *</label>
                 <div class="inline">
                   <div class="with-icon cal grow">
-                    <input class="inp" type="datetime-local" v-model="form.regClose"
+                    <input
+                      data-testid="sale-close"
+                      class="inp"
+                      type="datetime-local"
+                      v-model="form.regClose"
                       :class="{ 'is-invalid': showError && !form.saleNoEnd && !form.regClose }"
                       :disabled="form.saleNoEnd" />
                   </div>
-                  <label class="ck"><input type="checkbox" v-model="form.saleNoEnd" /> ปิดเมื่อบัตรหมด</label>
+                  <label class="ck">
+                    <input type="checkbox" v-model="form.saleNoEnd" data-testid="sale-no-end" />
+                    ปิดเมื่อบัตรหมด
+                  </label>
                 </div>
               </div>
             </div>
@@ -480,14 +415,22 @@ async function save() {
               <div>
                 <label>วันเริ่มจัดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp" :class="{ 'is-invalid': showError && !form.startDate }" type="date"
+                  <input
+                    data-testid="start-date"
+                    class="inp"
+                    :class="{ 'is-invalid': showError && !form.startDate }"
+                    type="date"
                     v-model="form.startDate" />
                 </div>
               </div>
               <div>
                 <label>วันสิ้นสุดงาน *</label>
                 <div class="with-icon cal">
-                  <input class="inp" :class="{ 'is-invalid': showError && !form.endDate }" type="date"
+                  <input
+                    data-testid="end-date"
+                    class="inp"
+                    :class="{ 'is-invalid': showError && !form.endDate }"
+                    type="date"
                     v-model="form.endDate" />
                 </div>
               </div>
@@ -497,15 +440,23 @@ async function save() {
               <div>
                 <label>ที่ตั้ง *</label>
                 <div class="with-icon loc">
-                  <input class="inp" :class="{ 'is-invalid': showError && !form.venue?.trim() }" v-model="form.venue"
+                  <input
+                    data-testid="venue"
+                    class="inp"
+                    :class="{ 'is-invalid': showError && !form.venue?.trim() }"
+                    v-model="form.venue"
                     placeholder="เช่น Impact Arena, Hall 9" />
                 </div>
               </div>
               <div>
                 <label>เวลาประตูเปิด *</label>
                 <div class="with-icon time">
-                  <input class="inp" :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }"
-                    v-model="form.gateOpen" placeholder="เช่น 17:00" />
+                  <input
+                    data-testid="gate-open"
+                    class="inp"
+                    :class="{ 'is-invalid': showError && !form.gateOpen?.trim() }"
+                    v-model="form.gateOpen"
+                    placeholder="เช่น 17:00" />
                 </div>
               </div>
             </div>
@@ -520,8 +471,7 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>รายละเอียดและรูปภาพ</h2>
-        <button class="chev" :class="{ open: open.description }" @click="toggle('description')">▲</button>
-
+        <button class="chev" :class="{ open: open.description }" @click="toggle('description')" data-testid="tog-desc">▲</button>
       </header>
       <div v-show="open.description" class="card-body">
         <div class="card-body">
@@ -534,10 +484,9 @@ async function save() {
             <div class="gallery two-col">
               <div class="gallery-item">
                 <label class="uplabel">รูปภาพเพิ่มเติม</label>
-                <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
-                  aria-label="ลบรูปโปสเตอร์">✕</button>
+                <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail" aria-label="ลบรูปโปสเตอร์" data-testid="detail-clear">✕</button>
                 <div class="upload small">
-                  <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" />
+                  <input type="file" accept="image/png, image/jpeg" @change="onDetailChange" data-testid="detail-input" />
                   <div class="preview" v-if="form.detailUrl">
                     <img v-if="detailSrc" :src="detailSrc" class="detail" />
                   </div>
@@ -547,10 +496,9 @@ async function save() {
 
               <div class="gallery-item">
                 <label class="uplabel">ผังงาน/ผังที่นั่ง</label>
-                <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat"
-                  aria-label="ลบรูปโปสเตอร์">✕</button>
+                <button v-if="form.seatmapUrl" class="text-del" type="button" @click="clearSeat" aria-label="ลบรูปโปสเตอร์" data-testid="seatmap-clear">✕</button>
                 <div class="upload small">
-                  <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" />
+                  <input type="file" accept="image/png, image/jpeg" @change="onSeatmapChange" data-testid="seatmap-input" />
                   <div class="preview" v-if="form.seatmapUrl">
                     <img v-if="seatmapSrc" :src="seatmapSrc" class="detail" />
                   </div>
@@ -567,14 +515,13 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>โซนของงาน</h2>
-        <button class="chev" :class="{ open: open.zone }" @click="toggle('zone')">▲</button>
-
+        <button class="chev" :class="{ open: open.zones }" @click="toggle('zones')" data-testid="tog-zones">▲</button>
       </header>
-      <div v-show="open.zone" class="card-body">
+      <div v-show="open.zones" class="card-body">
         <div class="card-body">
           <div class="pill-row">
             <label class="pill">
-              <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)" />
+              <input type="checkbox" v-model="multiZones" @change="onToggleMultiZones(multiZones)" data-testid="multi-zones" />
               มีหลายโซน
             </label>
           </div>
@@ -588,20 +535,19 @@ async function save() {
             </div>
 
             <div v-for="(z, i) in form.zones" :key="i" class="zone-row">
-              <input class="inp" v-model="z.zoneName" :class="{ 'is-invalid': showError && !z.zoneName?.trim() }"
-                placeholder="เช่น Zone A" required />
-
+              <input class="inp" v-model="z.zoneName" :class="{ 'is-invalid': showError && !z.zoneName?.trim() }" placeholder="เช่น Zone A" required
+                     :data-testid="`zone-${i}-name`" />
               <input class="inp num" type="number" min="0" v-model.number="z.capacity"
-                :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }" />
-
+                     :class="{ 'is-invalid': showError && (!z.capacity || Number(z.capacity) <= 0) }"
+                     :data-testid="`zone-${i}-capacity`" />
               <input class="inp num" type="number" min="0" step="100" v-model.number="z.price"
-                :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }" />
-
+                     :class="{ 'is-invalid': showError && (!z.price || Number(z.price) <= 0) }"
+                     :data-testid="`zone-${i}-price`" />
               <button class="del" type="button" v-if="multiZones && form.zones.length > 1 && i !== 0"
-                @click="removeZone(i)" aria-label="ลบโซน">✕</button>
+                      @click="removeZone(i)" aria-label="ลบโซน" :data-testid="`zone-${i}-remove`">✕</button>
             </div>
 
-            <button class="addbar mt-3" type="button" v-if="multiZones" @click="addZone()">+ เพิ่มโซน</button>
+            <button class="addbar mt-3" type="button" v-if="multiZones" @click="addZone()" data-testid="zone-add">+ เพิ่มโซน</button>
           </div>
         </div>
       </div>
@@ -611,15 +557,13 @@ async function save() {
     <section class="card">
       <header class="card-head accent">
         <h2>รอบของงาน</h2>
-        <button class="chev" :class="{ open: open.session }" @click="toggle('session')">▲</button>
-
+        <button class="chev" :class="{ open: open.sessions }" @click="toggle('sessions')" data-testid="tog-rounds">▲</button>
       </header>
-      <div v-show="open.session" class="card-body">
-
+      <div v-show="open.sessions" class="card-body">
         <div class="card-body">
           <div class="pill-row">
             <label class="pill">
-              <input type="checkbox" v-model="multiRounds" @change="onToggleMultiRounds(multiRounds)" />
+              <input type="checkbox" v-model="multiRounds" @change="onToggleMultiRounds(multiRounds)" data-testid="multi-rounds" />
               อีเวนต์มีหลายวัน/หลายรอบ
             </label>
           </div>
@@ -633,31 +577,38 @@ async function save() {
 
             <div v-for="(r, i) in form.rounds" :key="i" class="round-row">
               <input class="inp" v-model="r.roundName" :class="{ 'is-invalid': showError && !r.roundName?.trim() }"
-                :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required />
-              <input class="inp" :class="{ 'is-invalid': showError && !r.startTime }" type="time" v-model="r.startTime"
-                required />
-
+                     :placeholder="i === 0 ? 'Main Day / รอบหลัก' : 'เช่น รอบเช้า / รอบบ่าย'" required
+                     :data-testid="`round-${i}-name`" />
+              <input class="inp" :class="{ 'is-invalid': showError && !r.startTime }" type="time"
+                     v-model="r.startTime" required :data-testid="`round-${i}-time`" />
               <button class="del" type="button" v-if="multiRounds && form.rounds.length > 1 && i !== 0"
-                @click="removeRound(i)" aria-label="ลบรอบ">✕</button>
+                      @click="removeRound(i)" aria-label="ลบรอบ" :data-testid="`round-${i}-remove`">✕</button>
             </div>
 
-            <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()">+ เพิ่มรอบ</button>
+            <button class="addbar mt-3" type="button" v-if="multiRounds" @click="addRound()" data-testid="round-add">+ เพิ่มรอบ</button>
           </div>
         </div>
       </div>
     </section>
-    <div v-if="showError" ref="alertRef" class="alert error" role="alert" aria-live="assertive">
+
+    <!-- Alert -->
+    <div v-if="showError" ref="alertRef" class="alert error" role="alert" aria-live="assertive" data-testid="alert-errors">
       <div class="alert-title">กรุณากรอกข้อมูลให้ครบถ้วน</div>
       <ul class="alert-list">
         <li v-for="(msg, i) in errors" :key="i">{{ msg }}</li>
       </ul>
     </div>
+
+    <!-- Footer -->
     <div class="footer-bar">
       <button class="btn ghost" @click="onCancel">ยกเลิก</button>
-      <button class="btn primary" @click="save()">บันทึก</button>
+      <button class="btn primary" :disabled="saving" @click="save" data-testid="btn-save">
+        {{ saving ? 'กำลังบันทึก…' : 'บันทึก' }}
+      </button>
     </div>
   </section>
 </template>
+
 
 <style scoped>
 /* หัวcard*/
