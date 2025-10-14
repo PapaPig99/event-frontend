@@ -17,7 +17,7 @@ function openSection(titleText) {
     .within(() => cy.get('button.chev').click({ force: true }));
 }
 
-// อัปโหลดไฟล์ภาพจำลอง (1x1 PNG) โดยไม่ต้องมีไฟล์จริงใน fixtures
+// อัปโหลดไฟล์ภาพจำลอง (1x1 PNG)
 function uploadTinyPoster(selector = '.poster .upload input[type="file"]') {
   const tinyPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
@@ -32,17 +32,13 @@ function uploadTinyPoster(selector = '.poster .upload input[type="file"]') {
 
 describe('Admin - Create Event', () => {
   beforeEach(() => {
-    // ✅ ปลอมเป็น ADMIN ที่ล็อกอินแล้ว (กัน redirect ไปหน้า login)
     cy.seedAdminAuth();
-
-    // ✅ ดัก POST แบบครอบจักรวาล กันพลาด path
     cy.intercept('POST', '**/api/**/events*').as('createEventGeneric');
-
     cy.visit('/admin/create');
     cy.location('pathname', { timeout: 10000 }).should('eq', '/admin/create');
   });
 
-  it('CE-001 แสดงหน้า Create Event', () => {
+  it('CE-001: แสดงหน้า "สร้างอีเวนต์" และโครงสร้างพื้นฐานถูกต้อง', () => {
     cy.contains('h2', 'ข้อมูลอีเวนต์').should('be.visible');
     openSection('โซนของงาน');
     openSection('รอบของงาน');
@@ -51,7 +47,7 @@ describe('Admin - Create Event', () => {
     cy.contains('button', 'สร้าง').should('be.visible');
   });
 
-  it('CE-002 ว่างทั้งหมด มีแจ้งเตือนครบ', () => {
+  it('CE-002: ไม่กรอกข้อมูล ระบบแสดงข้อความแจ้งเตือนครบทุกช่องที่จำเป็น', () => {
     cy.contains('button', 'สร้าง').click();
     cy.get('.alert.error').should('be.visible');
     cy.get('.alert-list').within(() => {
@@ -66,7 +62,7 @@ describe('Admin - Create Event', () => {
     });
   });
 
-  it('CE-003 toggle ปิดเมื่อบัตรหมด จะปิด/เปิดช่องปิดจำหน่าย', () => {
+  it('CE-003: สวิตช์ "ปิดเมื่อบัตรหมด" ทำงานถูกต้อง ปิดและเปิดช่องวันปิดจำหน่ายได้', () => {
     cy.contains('label.ck', 'ปิดเมื่อบัตรหมด')
       .find('input[type="checkbox"]')
       .check({ force: true });
@@ -78,7 +74,7 @@ describe('Admin - Create Event', () => {
     byLabelInput('วันที่และเวลาปิดจำหน่าย *').should('not.be.disabled');
   });
 
-  it('CE-004/005 เพิ่ม/ลบ โซน & รอบ', () => {
+  it('CE-004: เพิ่มและลบโซนของงานได้ถูกต้อง', () => {
     openSection('โซนของงาน');
     cy.contains('.pill', 'มีหลายโซน')
       .find('input[type="checkbox"]')
@@ -87,7 +83,9 @@ describe('Admin - Create Event', () => {
     cy.get('.zone-row').should('have.length.at.least', 3);
     cy.get('.zone-row').last().find('button.del').click();
     cy.get('.zone-row').its('length').then((n) => expect(n).to.be.greaterThan(1));
+  });
 
+  it('CE-005: เพิ่มและลบรอบของงานได้ถูกต้อง', () => {
     openSection('รอบของงาน');
     cy.contains('.pill', 'อีเวนต์มีหลายวัน/หลายรอบ')
       .find('input[type="checkbox"]')
@@ -98,13 +96,12 @@ describe('Admin - Create Event', () => {
     cy.get('.round-row').its('length').then((n) => expect(n).to.be.greaterThan(0));
   });
 
-  it('CE-006 อัปโหลดโปสเตอร์แล้วเห็น preview', () => {
+  it('CE-006: อัปโหลดรูปโปสเตอร์แล้วแสดงตัวอย่างได้ถูกต้อง', () => {
     uploadTinyPoster();
     cy.get('.poster .preview img').should('be.visible');
   });
 
-  it('CE-007 กรอกครบและสร้างสำเร็จ (201 + Location header)', () => {
-    // ตอบ 201 สำหรับเคสนี้
+  it('CE-007: กรอกข้อมูลครบและสร้างอีเวนต์สำเร็จ (สถานะ 201)', () => {
     cy.intercept('POST', '**/api/**/events*', {
       statusCode: 201,
       headers: { Location: '/api/events/123' },
@@ -143,7 +140,7 @@ describe('Admin - Create Event', () => {
     });
   });
 
-  it('CE-008 backend error → โชว์ error alert', () => {
+  it('CE-008: เมื่อเกิดข้อผิดพลาดจากเซิร์ฟเวอร์ ระบบแสดงข้อความแจ้งเตือนข้อผิดพลาด', () => {
     cy.intercept('POST', '**/api/**/events*', {
       statusCode: 500,
       body: 'Server Error',
