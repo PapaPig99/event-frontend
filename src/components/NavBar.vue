@@ -7,14 +7,25 @@ import axios from 'axios'
 const route = useRoute()
 const router = useRouter()
 
-const TOKEN_KEY = 'token'
 const API_ME = '/api/me'            // เปลี่ยนตรงนี้ให้ตรง backend ถ้าจำเป็น
 
+
+function pickAuthToken() {
+  const keys = ['access_token', 'accessToken', 'jwt', 'token']
+  for (const k of keys) {
+    let v = localStorage.getItem(k) || sessionStorage.getItem(k)
+    if (!v) continue
+    v = v.replace(/^"|"$/g, '')
+    if (v.startsWith('Bearer ')) v = v.slice(7)   
+    if (v.split('.').length === 3) return v
+  }
+  return null
+}
 // ===== state =====
 const user = ref(null)              // ข้อมูลผู้ใช้จาก /api/me หรือจาก JWT fallback
 const jwtClaims = ref(null)         // payload จาก JWT (fallback)
 const loadingUser = ref(true)
-const isLoggedIn = computed(() => !!user.value)
+const isLoggedIn = computed(() => !!(user.value || jwtClaims.value))
 
 // ===== utils =====
 const isActive = (to) => route.path === to || route.path.startsWith(to + '/')
@@ -24,24 +35,22 @@ function decodeJwtPayload(token) {
   try {
     const [, payload] = token.split('.')
     if (!payload) return null
-    // base64url -> base64
-    const b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
-    const json = decodeURIComponent(
-      atob(b64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    )
+    let b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    while (b64.length % 4) b64 += '='   // ✨ เติม padding ให้ครบ
+    const json = atob(b64)
     return JSON.parse(json)
   } catch {
     return null
   }
 }
-
 // ชื่อที่จะแสดง: เรียงลำดับฟิลด์ที่พบบ่อย แล้วค่อย fallback ไปที่ JWT/email
 const displayName = computed(() => {
   const u = user.value || {}
   const j = jwtClaims.value || {}
+  const fromSub = (typeof j.sub === 'string')
+   ? (j.sub.includes('@') ? j.sub.split('@')[0] : j.sub)
+   : ''
+
   return (
     u.first_name ||
     u.username ||
@@ -50,13 +59,15 @@ const displayName = computed(() => {
     j.name ||
     j.preferred_username ||
     (j.email ? j.email.split('@')[0] : '') ||
+    fromSub ||
     'Me'
   )
 })
 
 // ===== main =====
 async function fetchMe() {
-  const token = localStorage.getItem(TOKEN_KEY)
+  
+  const token = pickAuthToken()
   if (!token) {
     user.value = null
     jwtClaims.value = null
@@ -76,19 +87,24 @@ async function fetchMe() {
   } catch (err) {
     const status = err?.response?.status
     if (status === 401 || status === 403) {
+      ;['access_token','accessToken','jwt','token'].forEach(k=>{
+        localStorage.removeItem(k); sessionStorage.removeItem(k)
+     })
       // token ไม่ใช้ได้แล้ว
-      localStorage.removeItem(TOKEN_KEY)
       user.value = null
       jwtClaims.value = null
     } else {
-      // เก็บ token ไว้ และใช้ชื่อจาก JWT ไปก่อน
-      // สามารถลองเรียกใหม่ตอนหลังได้ (เช่นปุ่มรีเฟรชโปรไฟล์)
       if (!user.value && jwtClaims.value) {
+        const j = jwtClaims.value
         user.value = {
-          username: jwtClaims.value.preferred_username,
-          name: jwtClaims.value.name,
-          email: jwtClaims.value.email,
+          id: j.sub,
+          username: j.preferred_username || (j.email ? j.email.split('@')[0] : ''),
+          first_name: j.name || '',
+          name: j.name || '',
+          email: j.email || '',
         }
+        // แคชไว้เผื่อหน้าอื่นอ่าน
+        localStorage.setItem('user', JSON.stringify(user.value))
       }
       console.warn('fetchMe failed but keep token:', status)
     }
@@ -98,7 +114,10 @@ async function fetchMe() {
 }
 
 function logout() {
-  localStorage.removeItem(TOKEN_KEY)
+  ;['access_token','accessToken','jwt','token'].forEach(k => {
+    localStorage.removeItem(k)
+    sessionStorage.removeItem(k)
+  })  
   user.value = null
   jwtClaims.value = null
   if (route.path.startsWith('/myevent')) router.push('/')
@@ -112,7 +131,7 @@ function onAuthChanged() {
 
 // cross-tab sync (อีกแท็บล็อกอิน/ออก)
 function onStorage(e) {
-  if (e.key === TOKEN_KEY) fetchMe()
+  if (['access_token','accessToken','jwt','token'].includes(e.key)) fetchMe()
 }
 
 onMounted(() => {
@@ -162,7 +181,7 @@ function openLogin() {
         <summary class="user-pill">
           <i class="fa-regular fa-user"></i>
           <span class="username">
-            {{ user.first_name || user.username || 'Me' }}
+            {{ displayName }}
           </span>
           <i class="fa-solid fa-chevron-down chev"></i>
         </summary>

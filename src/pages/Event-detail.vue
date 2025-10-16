@@ -12,14 +12,52 @@ const err = ref('')
 const event = ref({
   category: '',
   title: '',
+  description: '',
   dateText: '',
   venueText: '',
   timeText: '',
   priceText: '',
   poster: '',
   seatmap: '',
+  saleStartAt: null,        // ISO ที่เป็น “พ.ศ.” จาก API
+  saleEndAt: null,          // อาจเป็น null
+  saleUntilSoldout: false,  // true/false
 })
 
+const sessions = ref([])
+const sessionsSorted = computed(() => {
+  return [...sessions.value].sort((a, b) => {
+    const ax = new Date(a.startAt || a.start_at || a.startDate || 0).getTime()
+    const bx = new Date(b.startAt || b.start_at || b.startDate || 0).getTime()
+    return ax - bx
+  })
+})
+// แปลงวันที่/เวลา (รองรับปี พ.ศ. และรูปแบบทั่วไป)
+function toDateFromBuddhistOrIso(input) {
+  if (!input) return null
+  const raw = String(input).trim()
+  // YYYY-MM-DD(TH) [T HH:mm[:ss]]
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/)
+  if (!m) return new Date(raw)
+  let y = +m[1]; const mo = +m[2]-1; const d = +m[3]
+  const hh = +(m[4]||0), mm = +(m[5]||0), ss = +(m[6]||0)
+  if (y > 2400) y -= 543
+  const dt = new Date(y, mo, d, hh, mm, ss)
+  return isNaN(dt) ? null : dt
+}
+function formatSessionDate(s) {
+  const d = toDateFromBuddhistOrIso(s.startAt || s.start_at || s.startDate || s.date)
+  if (!d) return '-'
+  return d.toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' })
+}
+function formatSessionTime(s) {
+  // ถ้า api ให้ startTime เป็น "HH:mm[:ss]"
+  const t = s.startTime || s.start_time
+  if (t && /^\d{1,2}:\d{2}/.test(String(t))) return String(t).slice(0,5) + ' น.'
+  const d = toDateFromBuddhistOrIso(s.startAt || s.start_at || s.startDate || s.date)
+  if (!d) return '-'
+  return d.toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' }) + ' น.'
+}
 /* ========= รูป fallback ========= */
 const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
 const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
@@ -33,16 +71,41 @@ const hasSeatmap = computed(() =>
 onMounted(async () => {
   loading.value = true; err.value = ''
   try {
-    const { data: d } = await api.get(`/events/${route.params.id}/view`)
+    const id = Number(route.params.id)
+    const { data: raw } = await api.get(`/events/${route.params.id}`)
+    const d = Array.isArray(raw) ? (raw.find(e => Number(e.id) === id) || {}) : raw
+
     event.value = {
       title: d.title ?? '',
+      description: d.description ?? '',
       category: d.category ?? '',
       dateText: fmtThaiDate(d.startDate),
       venueText: d.location ?? '',
-      timeText: fmtThaiTime(d.doorOpenTime),
+      timeText: formatDoorOpen(d.doorOpenTime),
       priceText: buildPriceText(d),
       poster: d.posterImageUrl || d.detailImageUrl || fallbackPoster,
       seatmap: d.seatmapImageUrl || d.detailImageUrl || fallbackSeatmap,
+      saleStartAt: d.saleStartAt ?? null,
+      saleEndAt: d.saleEndAt ?? null,
+      saleUntilSoldout: !!d.saleUntilSoldout,
+    }
+    if (Array.isArray(d.sessions) && d.sessions.length) {
+      sessions.value = d.sessions
+    } else {
+      // 2.2 fallback: ลอง endpoint อื่นๆ ที่พบบ่อย
+      const paths = [
+        `/events/${route.params.id}/view`,
+        `/events/${route.params.id}/sessions`,
+        `/event_sessions?eventId=${route.params.id}`,
+      ]
+      for (const p of paths) {
+        try {
+          const { data: r } = await api.get(p)
+          // /view อาจคืน object ใหญ่ ต้องเด้งไป field sessions
+          const arr = Array.isArray(r) ? r : (Array.isArray(r?.sessions) ? r.sessions : [])
+          if (arr.length) { sessions.value = arr; break }
+        } catch {}
+      }
     }
   } catch (e) {
     const s = e?.response?.status
@@ -58,18 +121,70 @@ onMounted(async () => {
 })
 
 
+ const saleStartText = computed(() => {
+   if (!event.value.saleStartAt) return '-'
+   const start = formatThaiDateTimeFromBuddhistISO(event.value.saleStartAt)
+   const until = event.value.saleUntilSoldout
+     ? ' จนกว่าบัตรจะหมด'
+     : (event.value.saleEndAt ? ` ถึง ${formatThaiDateTimeFromBuddhistISO(event.value.saleEndAt)}` : '')
+   return start + until
+ })
 
 /* ========= utils ========= */
 function fmtThaiDate(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' })
+   if (!iso) return ''
+  // รองรับรูปแบบ "2568-01-10" (ปี พ.ศ.)
+  const parts = String(iso).split('-')
+  if (parts.length >= 3) {
+    let year = Number(parts[0])
+    const month = Number(parts[1]) - 1
+    const day = Number(parts[2])
+    // ถ้าปี > 2400 แปลว่าเป็นพ.ศ. → แปลงเป็น ค.ศ.
+    if (year > 2400) year -= 543
+    const d = new Date(year, month, day)
+    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+  }
+  return iso
 }
 function fmtThaiTime(hms) {
   if (!hms) return ''
   return String(hms).slice(0, 5) + ' น.'
 }
+
+ function formatDoorOpen(v) {
+   if (v == null) return '-'
+   const s = String(v).trim()
+   // ถ้าเป็นเวลาแบบ 9:00, 09:00 หรือ 09:00:00 → รูปแบบ HH:mm (น.)
+   const isClock = /^\d{1,2}:\d{2}(?::\d{2})?$/.test(s)
+   if (isClock) return s.slice(0,5) + ' น.'
+   // ไม่ใช่เวลา → คืนข้อความตามเดิม (เช่น "ก่อนเริ่มงาน 1 ชม.")
+   return s
+ }
+
 function isNum(v) { return v !== null && v !== undefined && !isNaN(Number(v)) }
+ // --- NEW: แปลง “พ.ศ.” → “ค.ศ.” จากสตริงรูปแบบ YYYY-MM-DDTHH:mm:ss
+ function toDateFromThaiBuddhistISO(isoBuddhist) {
+   if (!isoBuddhist) return null
+   const m = String(isoBuddhist).trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/)
+   if (!m) return null
+   const by = Number(m[1]) - 543     // ลบ 543 ปี
+   const mm = Number(m[2]) - 1
+   const dd = Number(m[3])
+   const hh = Number(m[4] || 0)
+   const mi = Number(m[5] || 0)
+   const ss = Number(m[6] || 0)
+   const d = new Date(by, mm, dd, hh, mi, ss)
+   return isNaN(d) ? null : d
+ }
+
+ // --- NEW: ฟอร์แมท Date → “6 ธันวาคม 2567, 19:00 น.”
+ function formatThaiDateTimeFromBuddhistISO(isoBuddhist) {
+   const d = toDateFromThaiBuddhistISO(isoBuddhist)
+   if (!d) return '-'
+   const dd = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })
+   const tt = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+   return `${dd}, ${tt} น.`
+ }
 
 function buildPriceText(d) {
   if (d && typeof d.priceText === 'string' && d.priceText.trim()) return d.priceText.trim()
@@ -121,7 +236,7 @@ function scrollToStage() {
 
 
 /* ========= ไปหน้าเลือกแผน/ประเภทบัตร ========= */
-function goToConcertPlan() {
+function goToConcertPlan(session) {
   const id = route.params.id
 
   // เก็บข้อมูลย่อส่งต่อไปหน้า ConcertPlan (ใส่เท่าที่มีจากหน้านี้)
@@ -132,16 +247,18 @@ function goToConcertPlan() {
     seatmapImageUrl: event.value.seatmap,
     // ถ้าอยากส่งเวลาแบบดิบ ให้ลอกจาก API ฝั่ง ConcertPlan; ที่นี่มีเฉพาะข้อความแสดงผล
     location: event.value.venueText,
-    doorOpenTime: event.value.timeText?.replace(' น.','') || undefined
+    startAt: session?.startAt || session?.start_at || session?.startDate || null,
+    startTime: (session?.startTime || session?.start_time || '').replace(/:00$/, ''),
   }
 
   // ส่งผ่าน router state และกันพลาดเก็บไว้ใน sessionStorage
   router.push({
     name: 'concert-plan',
     params: { id },
-    state: { eventLite }
+    state: { eventLite, sessionId: session?.id || null }
   })
   sessionStorage.setItem(`eventLite:${id}`, JSON.stringify(eventLite))
+  if (session?.id) sessionStorage.setItem(`sessionId:${id}`, String(session.id))
 }
 function goToPayment() {
   router.push({ name: 'payment', params: { id: route.params.id }, state: { order /* ข้อมูลที่เลือก */ } })
@@ -178,29 +295,36 @@ function goToPayment() {
             <div class="facts">
               <ul class="fact-list">
                 <li>
-                  <i class="fa-regular fa-calendar"></i>
                   <div>
-                    <div class="label">วันที่แสดง</div>
+                    <div class="label"><i class="fa-regular fa-calendar"></i> 
+                      วันที่แสดง</div>
                     <div class="val">{{ event.dateText }}</div>
                   </div>
                 </li>
                 <li>
-                  <i class="fa-solid fa-location-dot"></i>
+                  
                   <div>
-                    <div class="label">สถานที่แสดง</div>
+                    <div class="label"><i class="fa-solid fa-location-dot"></i> 
+                      สถานที่แสดง</div>
                     <div class="val">{{ event.venueText }}</div>
                   </div>
                 </li>
                 <li>
-                  <i class="fa-regular fa-clock"></i>
+                  
                   <div>
-                    <div class="label">ประตูเปิด</div>
+                    <div class="label"> <i class="fa-regular fa-clock"></i> 
+                      ประตูเปิด</div>
                     <div class="val">{{ event.timeText }}</div>
                   </div>
                 </li>
+                
               </ul>
 
               <div class="price-box">
+                  <div style="margin-bottom: 10px;">
+                    <div class="label"><i class="fa-solid fa-cart-shopping"></i> วันเปิดจำหน่าย</div>
+                    <div class="val">{{ saleStartText  }}</div>
+                </div>
                 <div class="price-head">
                   <i class="fa-regular fa-money-bill-1"></i>
                   <span>ราคาบัตร</span>
@@ -256,13 +380,24 @@ function goToPayment() {
           <div class="dt-col">วันที่แสดง</div>
           <div class="dt-col right">เวลา</div>
         </div>
-        <div class="dt-row dt-body">
-          <div class="dt-col">{{ event.dateText }}</div>
-          <div class="dt-col right">
-            <button class="time-pill" @click="goToConcertPlan">
-              {{ event.timeText || '—' }}
-            </button>
+        <div
+          v-if="sessionsSorted.length"
+          class="dt-row dt-body"
+          v-for="s in sessionsSorted"
+          :key="s.id"
+        >
+          <div class="dt-col">
+            {{ s.name || formatSessionDate(s) }}
           </div>
+          <div class="dt-col right">
+            <button class="time-pill" @click="goToConcertPlan(s)">
+              {{ formatSessionTime(s) }}
+            </button>
+         </div>
+        </div>
+        <div v-else class="dt-row dt-body">
+          <div class="dt-col">—</div>
+          <div class="dt-col right">—</div>
         </div>
       </div>
     </div>
@@ -273,7 +408,7 @@ function goToPayment() {
   <div class="container">
     <h2 class="section-title">รายละเอียด</h2>
     <h3 class="desc-title">{{ event.title }}</h3>
-    <p>จำหน่ายบัตร</p>
+    <p class="description">{{ event.description }}</p>
   </div>
 </section>
 <!-- โมดัลซูมผัง (ถ้ามี) -->

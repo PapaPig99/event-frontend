@@ -33,8 +33,7 @@ const routes = [
       },
 
       { path: 'myevent', name: 'my-event', component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
-      { path: 'event/:id/success',name: 'ticket-success',component: () => import('@/pages/TicketSuccess.vue'),props: true,meta: { requiresAuth: true }
-},
+      { path: 'event/:id/success',name: 'ticket-success',component: () => import('@/pages/TicketSuccess.vue'),props: true,meta: { requiresAuth: true }},
 
       { path: 'help', name: 'help', component: () => import('@/pages/Help.vue') },
       { path: '/login', name: 'login-virtual', beforeEnter: (to) => ({ name: 'home', query: { ...to.query, login: '1' } }) },

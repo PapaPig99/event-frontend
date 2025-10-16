@@ -2,6 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/lib/api'
+import { onBeforeUnmount } from 'vue'
+onBeforeUnmount(() => stopCountdown())
 
 // รับ id จาก route เพื่อใช้ key เก็บ session
 const props = defineProps({ id: [String, Number] })
@@ -47,6 +49,16 @@ async function createRegistration() {
     })
     regId.value = Number(data?.id)
     if (!regId.value) throw new Error('No registration id')
+   // ตัวเลือกทั่วไปที่พบบ่อย (ลองตามจริงที่คุณมี)
+   const qrCandidates = [
+     `/api/payments/qr/${regId.value}`,
+     `/api/payments/qr?registrationId=${regId.value}`,
+     `/api/registrations/${regId.value}/qr`,
+   ];
+   qr.value = qrCandidates[0]; // เลือกอันที่คุณมีจริง ถ้าอันแรกไม่ใช่ให้เปลี่ยน
+
+   // เริ่มนับเวลาชำระเงิน
+   startCountdown();
   } catch (e) {
     console.error('POST /registrations error:', e?.response?.status, e?.response?.data || e.message)
     // 401/403 → ยังไม่ล็อกอิน/สิทธิ์ไม่ผ่าน
@@ -81,6 +93,7 @@ async function confirmPayment() {
     alert('ยืนยันการจ่ายไม่สำเร็จ กรุณาลองใหม่')
   } finally {
     confirming.value = false
+    stopCountdown()
   }
 }
 
@@ -130,6 +143,85 @@ onMounted(() => {
   loadOrder()
   createRegistration()
 })
+
+
+// ===== Payment countdown / QR =====
+const PAY_WINDOW_SEC = 5 * 60;               // 5 นาที (เปลี่ยนได้)
+const deadline = ref(0);                      // timestamp (ms)
+const remaining = ref(0);                     // seconds
+let timer = null;
+
+const isTimeoutOpen = ref(false);             // modal หมดเวลา
+const qr = ref('');                           // URL ของ QR ที่จะแสดง
+
+const mmss = computed(() => {
+  const s = Math.max(0, Math.floor(remaining.value));
+  const m = Math.floor(s / 60).toString().padStart(2, '0');
+  const ss = (s % 60).toString().padStart(2, '0');
+  return `${m}:${ss}`;
+});
+
+function startCountdown(seconds = PAY_WINDOW_SEC) {
+  stopCountdown();
+  deadline.value = Date.now() + seconds * 1000;
+  tick();
+  timer = setInterval(tick, 1000);
+}
+
+function stopCountdown() {
+  if (timer) { clearInterval(timer); timer = null; }
+}
+
+function tick() {
+  remaining.value = Math.ceil((deadline.value - Date.now()) / 1000);
+  if (remaining.value <= 0) {
+    stopCountdown();
+    onTimeout();
+  }
+}
+
+async function onTimeout() {
+  isTimeoutOpen.value = true;
+  await cancelRegistration(true); // ยกเลิกฝั่งแบ็กเอนด์ (ถ้ามี endpoint)
+}
+
+function goHomeAfterTimeout() {
+  isTimeoutOpen.value = false;
+  router.replace({ name: 'home' });
+}
+async function cancelRegistration(silent = false) {
+  try {
+    if (!regId.value) return;
+
+    // พยายามหลาย endpoint ตามที่แบ็กเอนด์อาจมีจริง
+    const candidates = [
+      { m: 'post',  p: `/registrations/${regId.value}/cancel` },
+      { m: 'patch', p: `/registrations/${regId.value}/cancel` },
+      { m: 'patch', p: `/registrations/${regId.value}`, body: { status: 'CANCELLED' } },
+      { m: 'delete', p: `/registrations/${regId.value}` },
+    ];
+
+    for (const c of candidates) {
+      try {
+        if (c.m === 'post')   await api.post(c.p, c.body || {});
+        if (c.m === 'patch')  await api.patch(c.p, c.body || {});
+        if (c.m === 'delete') await api.delete(c.p);
+        break; // สำเร็จอันไหนก่อนจบเลย
+      } catch (e) {
+        // ลองตัวถัดไป
+      }
+    }
+  } catch (e) {
+    if (!silent) alert('ยกเลิกไม่สำเร็จ กรุณาลองใหม่');
+  }
+}
+
+async function cancelOrder() {
+  await cancelRegistration();
+  sessionStorage.removeItem(`registrationDraft:${route.params.id}`);
+  router.replace({ name: 'concert-plan', params: { id: route.params.id } });
+}
+
 </script>
 
 
