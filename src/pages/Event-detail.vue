@@ -33,7 +33,7 @@ const hasSeatmap = computed(() =>
 onMounted(async () => {
   loading.value = true; err.value = ''
   try {
-    const { data: d } = await api.get(`/events/${route.params.id}`)
+    const { data: d } = await api.get(`/events/${route.params.id}/view`)
     event.value = {
       title: d.title ?? '',
       category: d.category ?? '',
@@ -117,9 +117,6 @@ function scrollToStage() {
   const y = el.getBoundingClientRect().top + window.pageYOffset - 80
   window.scrollTo({ top: y, behavior: 'smooth' })
 }
-
-
-
 
 
 
