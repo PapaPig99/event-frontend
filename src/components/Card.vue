@@ -23,7 +23,7 @@ function isTokenValid() {
 function handleOpen(id) {
   if (!isTokenValid()) {
     // เก็บที่มาว่าจะกลับมาหน้าไหนหลัง login
-    router.push({ path: '/login', query: { redirect: `/events/${id}` } })
+    router.push({ path: '/login', query: { redirect: `/events/${id}/view` } })
     return
   }
   emit('open', id)
