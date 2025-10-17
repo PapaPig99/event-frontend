@@ -7,7 +7,10 @@ export default defineConfig({
    server: {
    proxy: {
     '/api':    { target: 'http://localhost:8081', changeOrigin: true },
-    '/images': { target: 'http://localhost:8081', changeOrigin: true }
+    '/images': { target: 'http://localhost:8081', changeOrigin: true },
+
+     // Core/Auth service (3137)
+      '/core':   { target: 'http://localhost:3137', changeOrigin: true },
   }
   },
   resolve: {

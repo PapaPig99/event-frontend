@@ -1,12 +1,37 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { watch } from 'vue'
+
 
 /* ===== Router ===== */
 const router = useRouter()
 const route  = useRoute()
 const routeId = computed(() => route.params.id)
 const hasSeatmap = ref(false)
+
+const poster = ref('')
+const title  = ref('')
+const shows  = ref([])
+const selectedShow = ref('')
+
+
+watch(selectedShow, async (newShow) => {
+  // โหลด availability ของรอบใหม่
+  await loadAvailOnce()
+
+  // เมื่อโหลดเสร็จ → อัปเดตจำนวนคงเหลือในแต่ละ zone
+  latestAvail.value.forEach(item => {
+    const zoneId = item.zoneId ?? item.id
+    const available = Number(item.available ?? item.remaining ?? item.left ?? 0)
+    const z = zones.value.find(z => String(z.id) === String(zoneId))
+    if (z) {
+      z.remaining = available
+    }
+  })
+})
+
+
 // เดิม: const goBack = () => router.back()
 const goBack = () => {
   const id = routeId.value
@@ -32,6 +57,10 @@ const selectedItems = computed(() =>
 )
 const canProceed = computed(() => selectedItems.value.length > 0)
 
+
+
+
+
 async function goToPayment() {
   if (selectedItems.value.length === 0) {
     alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
@@ -42,6 +71,12 @@ async function goToPayment() {
     }
     return
   }
+
+
+
+
+
+
 
   const id = route.params.id
 
@@ -56,7 +91,7 @@ async function goToPayment() {
   // Fallback 2: ดึงจาก API แล้ว map label แบบเดียวกับที่ shows ใช้
   if (!sessionId) {
     try {
-      const res = await fetch(`/api/events/${id}`)
+      const res = await fetch(`/api/events/${id}/view`)
       if (res.ok) {
         const api = await res.json()
         const toTimeLabel = (t)=> String(t||'').slice(0,5)
@@ -120,10 +155,7 @@ const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.ur
 const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
 
 /* ===== HERO data (เริ่มว่าง แล้วค่อยเติมตอน mount) ===== */
-const poster = ref('')
-const title  = ref('')
-const shows  = ref([])
-const selectedShow = ref('')
+
 
 /* ===== Stepper ===== */
 const currentStep = 2
@@ -159,7 +191,7 @@ function readPlan(id) {
   return null
 }
 
-onMounted(() => {
+onMounted(async() => {
   const id = routeId.value
   const plan = readPlan(id)
 
@@ -181,6 +213,7 @@ onMounted(() => {
     sessionLabelToId.value[label] = s.id
   })
   selectedShow.value ||= shows.value[0] || ''
+  await refreshAvailabilityForSelectedShow()
 }
 
 
@@ -318,10 +351,11 @@ onMounted(async () => {
 
 // คงเหลือจริง = โควตาเดิม (remaining) - จำนวนที่เลือก (qty)
 function left(z) {
-  const cap = Number(z.remaining || 0)
-  const q   = Number(z.qty || 0)
-  return Math.max(0, cap - q)
+  const live = liveAvailableFor(z)   // ว่างจริงของรอบปัจจุบัน (จาก API)
+  const q    = Number(z.qty || 0)
+  return Math.max(0, live - q)
 }
+
 
 function inc(i) {
   const z = zones.value[i]
@@ -341,7 +375,188 @@ function dec(i) {
 
 /* ===== Dropdown ที่นั่งว่าง ===== */
 const showAvail = ref(false)
+const loadingAvail = ref(false)
+const availError = ref('')
+const latestAvail = ref([])     // [{ zoneId, zoneName, capacity, available }, ...]
+let availTimer = null           // setInterval handler
 
+// ===== mapping availability สด เพื่อให้ + / - อ้างอิงเลขเดียวกับ dropdown =====
+const liveAvailByZone = ref({})  // { [zoneId:string|number]: number } หรือใช้ key เป็นชื่อ
+
+function normalizeKey(v) {
+  return String(v ?? '').trim().toLowerCase()
+}
+
+// หาค่า available สดของโซน (จาก id ก่อน ถ้าไม่เจอใช้ชื่อ/label)
+function liveAvailableFor(z) {
+  const byId = liveAvailByZone.value?.[String(z.id)]
+  if (Number.isFinite(byId)) return Number(byId)
+
+  // จับคู่ด้วยชื่อในกรณีไม่มี id จาก API
+  const k1 = normalizeKey(z.label ?? z.name ?? z.id)
+  const byName = liveAvailByZone.value?.[k1]
+  if (Number.isFinite(byName)) return Number(byName)
+
+  // fallback: ใช้ค่าเดิมของโควตา (remaining) ถ้าไม่มี live
+  return Number(z.remaining ?? 0)
+}
+
+// หลังอัปเดต availability สด: บีบ qty ไม่ให้เกิน live
+function reconcileQtyWithLive() {
+  zones.value.forEach(z => {
+    const live = liveAvailableFor(z)
+    if (z.qty > live) {
+      z.qty = Math.max(0, live) // ลดลงให้ไม่เกินของจริง
+    }
+  })
+}
+
+// ใช้คลาสสีตามจำนวนคงเหลือ
+function qtyClass(n){
+  if (n <= 0) return 'zero'
+  if (n <= 10) return 'low'
+  return 'ok'
+}
+// เลือกแถวที่จะโชว์: ถ้ามี latestAvail จาก API ให้ใช้ก่อน, ไม่งั้น fallback จาก zones เดิม
+const rowsToShow = computed(() => {
+  if (Array.isArray(latestAvail.value) && latestAvail.value.length > 0) {
+    return latestAvail.value.map(item => {
+      const zoneId   = item.zoneId ?? item.id
+      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
+      const base     = Number(item.available ?? item.remaining ?? item.left ?? 0)
+
+      // หาค่า qty ที่เลือกในโซนเดียวกัน
+      const selectedQty = (() => {
+        // จับคู่ด้วย id ก่อน
+        let z = zones.value.find(zz => String(zz.id) === String(zoneId))
+        if (!z) {
+          // ถ้าไม่มี id ให้จับคู่ด้วยชื่อ
+          const key = normalizeKey(zoneName)
+          z = zones.value.find(zz => normalizeKey(zz.label ?? zz.name ?? zz.id) === key)
+        }
+        return Number(z?.qty ?? 0)
+      })()
+
+      const left = Math.max(0, base - selectedQty) // เหลือหลังหักสิ่งที่เราเลือกไว้
+      return {
+        code: zoneName ?? zoneId ?? '-',
+        left
+      }
+    })
+  }
+
+  // fallback จาก zones เดิม
+  return zones.value.map((z,i) => ({
+    code: z.label || z.name || z.id || `Zone ${i+1}`,
+    left: left(z) // ใช้สูตรใหม่ (live - qty)
+  }))
+})
+
+
+// ===== หา sessionId ปัจจุบันตาม selectedShow =====
+// (ย้าย/คัดลอก logic เดิมจาก goToPayment มาใช้ซ้ำได้)
+async function getCurrentSessionId() {
+  const id = route.params.id
+  // 1) จากแผนที่ label -> id (ถ้ามี)
+  let sid = sessionLabelToId?.value?.[selectedShow.value]
+
+  // 2) ถ้ามี sessionsRaw แค่ 1 รอบ ใช้อันนั้นเลย
+  if (!sid && Array.isArray(sessionsRaw?.value) && sessionsRaw.value.length === 1) {
+    sid = sessionsRaw.value[0]?.id
+  }
+
+  // 3) ดึงจาก /api/events/{id}/view แล้วแมป label → id (กันกรณีเข้าหน้านี้ตรง ๆ)
+  if (!sid) {
+    try {
+      const res = await fetch(`/api/events/${id}/view`)
+      if (res.ok) {
+        const api = await res.json()
+        const toTimeLabel = (t)=> String(t||'').slice(0,5)
+        const toDateLabel = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+        const makeShowLabel = (dateIso, timeStr)=> `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
+        const d = api.startDate || api.start_date
+        const options = (api.sessions || []).map(s => ({
+          id: s.id,
+          label: makeShowLabel(d, s.start_time || s.startTime)
+        }))
+        const found = options.find(o => o.label === selectedShow.value)
+        sid = found?.id || options[0]?.id
+      }
+    } catch (e) {
+      console.warn('getCurrentSessionId() fetch failed', e)
+    }
+  }
+
+  return sid
+}
+
+async function refreshAvailabilityForSelectedShow() {
+  await loadAvailOnce()     // ดึง /availability ของ session ปัจจุบัน → อัปเดต liveAvailByZone
+
+  // อัปเดต remaining บน zones ให้สอดคล้องกับ live และบีบ qty ให้ไม่เกิน
+  zones.value = zones.value.map(z => ({
+    ...z,
+    remaining: liveAvailableFor(z)
+  }))
+  reconcileQtyWithLive()
+}
+
+
+// โหลด availability 1 ครั้ง
+async function loadAvailOnce() {
+  loadingAvail.value = true
+  availError.value = ''
+  latestAvail.value = []
+
+  try {
+    const sid = await getCurrentSessionId()
+    if (!sid) throw new Error('ไม่พบรอบการแสดง (sessionId)')
+
+    const res = await fetch(`/api/zones/session/${sid}/availability`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+
+    // คาดรูปแบบ: [{ zoneId, zoneName, capacity, available }, ...]
+    latestAvail.value = Array.isArray(data) ? data : []
+
+      // === สร้าง liveAvailByZone จากผล API ===
+    const map = {}
+    latestAvail.value.forEach(item => {
+      // รองรับหลายชื่อคีย์จาก backend
+      const zoneId = item.zoneId ?? item.id
+      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
+      const available = Number(item.available ?? item.remaining ?? item.left ?? 0)
+
+      if (zoneId != null) map[String(zoneId)] = available
+      if (zoneName)      map[normalizeKey(zoneName)] = available
+    })
+    liveAvailByZone.value = map
+
+    // บังคับ qty ปัจจุบันไม่ให้เกินเลขว่างจริง
+    reconcileQtyWithLive()
+  } catch (err) {
+    availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
+  } finally {
+    loadingAvail.value = false
+  }
+}
+// เปิดโมดัล + เริ่ม auto-refresh
+async function openAvail() {
+  showAvail.value = true
+  await loadAvailOnce()
+  // refresh ทุก 5 วินาที
+  if (availTimer) clearInterval(availTimer)
+  availTimer = setInterval(loadAvailOnce, 5000)
+}
+
+// ปิดโมดัล + หยุด refresh
+function closeAvail() {
+  showAvail.value = false
+  if (availTimer) {
+    clearInterval(availTimer)
+    availTimer = null
+  }
+}
 /* แถวสำหรับโชว์ในดรอปดาวน์ (คำนวณจาก zones ทุกครั้ง → อัปเดตอัตโนมัติ) */
 const availRows = computed(() =>
   zones.value.map((z, i) => ({
@@ -390,35 +605,51 @@ function makeShowLabel(dateIso, timeStr){
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="openAvail">ที่นั่งว่าง</button>
         </div>
       </div>
       <!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
-<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail = false">
+<!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
+<div v-if="showAvail" class="avail-backdrop" @click.self="closeAvail">
   <div class="avail-card">
     <div class="avail-head">
       <div class="title">โซนที่นั่ง</div>
-      <button class="close" @click="showAvail = false">✕</button>
+      <button class="close" @click="closeAvail">✕</button>
     </div>
 
     <div class="avail-table">
-      <div class="row header">
-        <div class="col zone">โซนที่นั่ง</div>
-        <div class="col left">ที่นั่งว่าง</div>
-        <div class="col arrow"></div>
+      <!-- loading -->
+      <div v-if="loadingAvail" class="row" style="justify-content:center; font-weight:700;">
+        กำลังโหลด...
       </div>
 
-      <div v-for="(r, idx) in availRows" :key="idx" class="row">
-        <div class="col zone">{{ r.code }}</div>
-        <div class="col left" :class="{ ok: r.left > 0, zero: r.left === 0 }">
-          {{ r.left.toLocaleString('en-US') }}
+      <!-- error -->
+      <div v-else-if="availError" class="row" style="justify-content:center; color:#d30000; font-weight:700;">
+        โหลดไม่สำเร็จ: {{ availError }}
+      </div>
+
+      <!-- table -->
+      <template v-else>
+        <div class="row header">
+          <div class="col zone">โซนที่นั่ง</div>
+          <div class="col left">ที่นั่งว่าง</div>
+          <div class="col arrow"></div>
         </div>
-      </div>
 
-      <div v-if="availRows.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
+        <div v-for="(r, idx) in rowsToShow" :key="idx" class="row">
+          <div class="col zone">{{ r.code }}</div>
+          <div class="col left" :class="qtyClass(r.left)">
+            {{ r.left.toLocaleString('en-US') }}
+          </div>
+          
+        </div>
+
+        <div v-if="rowsToShow.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
+      </template>
     </div>
   </div>
 </div>
+
     </section>
 
     <!-- STEP 2 -->
