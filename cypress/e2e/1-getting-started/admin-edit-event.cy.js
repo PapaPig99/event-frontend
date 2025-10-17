@@ -1,42 +1,47 @@
 /// <reference types="cypress" />
 
+// ===== Helpers =====
 const iso = {
   dt: '2025-10-19T10:00',
   d1: '2025-10-28',
   d2: '2025-10-29',
 };
 
-// ใช้กับ input ทั่วไป
-function setValue(selector, value) {
-  cy.get(selector).clear({ force: true }).type(String(value), { force: true });
+function getInputByLabel(labelText) {
+  return cy.contains('label', labelText).parent().find('input.inp');
+}
+function getDateByLabel(labelText) {
+  return cy.contains('label', labelText).parent().find('input[type="date"].inp');
+}
+function getDTByLabel(labelText) {
+  return cy.contains('label', labelText).parent().find('input[type="datetime-local"].inp');
+}
+function setValue(elOrSelector, value) {
+  const $el = typeof elOrSelector === 'string' ? cy.get(elOrSelector) : elOrSelector;
+  $el.clear({ force: true }).type(String(value), { force: true });
+}
+function clearNativeDateTime(elOrSelector) {
+  const $el = typeof elOrSelector === 'string' ? cy.get(elOrSelector) : elOrSelector;
+  $el.invoke('val', '').trigger('input').trigger('change');
 }
 
-// เคลียร์ <input type="datetime-local"> หรือพวก native date/time โดยไม่ใช้ {backspace}
-function clearNativeDateTime(selector) {
-  cy.get(selector)
-    .invoke('val', '')
-    .trigger('input')
-    .trigger('change');
-}
-
-// อัปโหลดรูป 1×1 เพื่อให้ผ่าน validation ถ้าจำเป็น
-function uploadTinyPoster(selector = '.poster .upload input[type="file"]') {
-  const tinyPngBase64 =
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==';
-  const file = {
-    contents: Cypress.Buffer.from(tinyPngBase64, 'base64'),
-    fileName: 'poster.png',
-    mimeType: 'image/png',
-    lastModified: Date.now(),
-  };
-  cy.get(selector).selectFile(file, { force: true });
-}
-
+// ========= MAIN TEST =========
 describe('Admin - Edit Event', () => {
   beforeEach(() => {
-    cy.seedAdminAuth();
+    cy.clearCookies();
+    cy.clearLocalStorage();
 
-    cy.intercept('GET', '**/api/**/events/*', {
+    const admin = { username: 'admin', role: 'ADMIN' };
+
+    // --- mock ทุก endpoint auth/me/profile/session ให้เป็น ADMIN ---
+    cy.intercept('GET', '**/api/me*', { statusCode: 200, body: admin });
+    cy.intercept('GET', '**/api/**/me*', { statusCode: 200, body: admin });
+    cy.intercept('GET', '**/api/auth/**', { statusCode: 200, body: admin });
+    cy.intercept('GET', '**/api/**/profile*', { statusCode: 200, body: admin });
+    cy.intercept('GET', '**/api/**/session*', { statusCode: 200, body: admin });
+
+    // --- ดัก GET /api/events/1 ---
+    cy.intercept('GET', '**/api/events/*', {
       statusCode: 200,
       body: {
         id: 1,
@@ -57,69 +62,94 @@ describe('Admin - Edit Event', () => {
       },
     }).as('getEvent');
 
-    cy.visit('/admin/events/1/edit');
+    // --- set auth ใน localStorage ก่อนหน้าโหลดหน้าเพจ ---
+    cy.visit('/admin/events/1/edit', {
+      onBeforeLoad(win) {
+        win.localStorage.setItem('token', 'test-token');
+        win.localStorage.setItem('role', 'ADMIN');
+        win.localStorage.setItem('user', JSON.stringify(admin));
+        win.localStorage.setItem('auth', JSON.stringify({ accessToken: 'test-token', ...admin }));
+      },
+    });
+
+    // --- ตรวจว่าไม่ถูก redirect ---
+    cy.location('pathname', { timeout: 10000 }).should('include', '/admin/events/1/edit');
     cy.wait('@getEvent');
   });
 
   it('EDIT-001: แสดงข้อมูลอีเวนต์จาก API ได้ถูกต้อง', () => {
-    cy.get('[data-testid="event-name"]').should('have.value', 'MARIAH CAREY The Celebration of Mimi');
-    cy.get('[data-testid="event-category"]').should('have.value', 'concert');
-    cy.get('[data-testid="venue"]').should('have.value', 'Impact Arena');
+    getInputByLabel('ชื่อ *').should('have.value', 'MARIAH CAREY The Celebration of Mimi');
+    cy.contains('label', 'หมวดหมู่ *')
+      .parent()
+      .find('select.inp')
+      .should('have.value', 'concert');
+    getInputByLabel('ที่ตั้ง *').should('have.value', 'Impact Arena');
   });
 
-  it('EDIT-002: เมื่อไม่กรอกข้อมูล ระบบแสดงข้อความแจ้งเตือนให้กรอกข้อมูลให้ครบ', () => {
-    setValue('[data-testid="event-name"]', ' ');
-    setValue('[data-testid="venue"]', ' ');
-    cy.get('[data-testid="btn-save"]').click();
-    cy.get('[data-testid="alert-errors"]').should('exist');
-    cy.contains('กรุณากรอกชื่ออีเวนต์').should('exist');
+  it('EDIT-002: ไม่กรอกข้อมูลแล้วขึ้นแจ้งเตือนครบ', () => {
+    setValue(getInputByLabel('ชื่อ *'), ' ');
+    setValue(getInputByLabel('ที่ตั้ง *'), ' ');
+    clearNativeDateTime(getDTByLabel('วันที่และเวลาปิดจำหน่าย *'));
+
+    cy.contains('button', 'บันทึก').click({ force: true });
+    cy.get('.alert.error').should('exist');
+    cy.contains('.alert.error li', 'กรุณากรอกชื่ออีเวนต์').should('exist');
   });
 
-  it('EDIT-003: เมื่อตั้งค่าให้ขายจนหมด ช่องวันปิดจำหน่ายจะถูกปิดและสามารถบันทึกได้', () => {
-    cy.get('[data-testid="sale-no-end"]').check({ force: true });
-    cy.get('[data-testid="sale-close"]').should('be.disabled');
+  it('EDIT-003: ติ๊ก "ปิดเมื่อบัตรหมด" แล้วช่องวันปิดจำหน่ายถูกปิด และบันทึกสำเร็จ', () => {
+    cy.contains('.ck', 'ปิดเมื่อบัตรหมด')
+      .find('input[type="checkbox"]')
+      .check({ force: true });
 
-    setValue('[data-testid="event-name"]', 'Mariah Carey Live');
-    setValue('[data-testid="start-date"]', iso.d1);
-    setValue('[data-testid="end-date"]', iso.d2);
-    setValue('[data-testid="venue"]', 'Impact Arena');
-    setValue('[data-testid="gate-open"]', '17:00');
+    getDTByLabel('วันที่และเวลาปิดจำหน่าย *').should('be.disabled');
 
-    cy.intercept('PUT', '**/events/*', { statusCode: 204 }).as('save');
+    setValue(getInputByLabel('ชื่อ *'), 'Mariah Carey Live');
+    setValue(getDateByLabel('วันเริ่มจัดงาน *'), iso.d1);
+    setValue(getDateByLabel('วันสิ้นสุดงาน *'), iso.d2);
+    setValue(getInputByLabel('ที่ตั้ง *'), 'Impact Arena');
+    setValue(getInputByLabel('เวลาประตูเปิด *'), '17:00');
 
+    cy.intercept('PUT', '**/events/*', { statusCode: 204 }).as('saveOk');
     cy.window().then((win) => cy.stub(win, 'alert').as('alert'));
-    cy.get('[data-testid="btn-save"]').click();
+    cy.contains('button', 'บันทึก').click({ force: true });
 
-    cy.wait('@save');
+    cy.wait('@saveOk');
     cy.get('@alert').should('have.been.calledWith', 'บันทึกสำเร็จ');
   });
 
-  it('EDIT-004: เมื่อตั้งค่าไม่ให้ขายจนหมด ระบบต้องให้กรอกวันปิดจำหน่าย', () => {
-    cy.get('[data-testid="sale-no-end"]').uncheck({ force: true });
-    clearNativeDateTime('[data-testid="sale-close"]');
-    cy.get('[data-testid="btn-save"]').click();
-    cy.contains('กรุณากรอกวันที่และเวลาปิดจำหน่าย').should('exist');
+  it('EDIT-004: ไม่ติ๊ก "ปิดเมื่อบัตรหมด" ต้องกรอกวันปิดจำหน่าย', () => {
+    cy.contains('.ck', 'ปิดเมื่อบัตรหมด')
+      .find('input[type="checkbox"]')
+      .uncheck({ force: true });
+
+    clearNativeDateTime(getDTByLabel('วันที่และเวลาปิดจำหน่าย *'));
+    cy.contains('button', 'บันทึก').click({ force: true });
+
+    cy.contains('.alert.error li', 'กรุณากรอกวันที่และเวลาปิดจำหน่าย').should('exist');
   });
 
-  it('EDIT-005: เพิ่มและลบโซนของงานได้ถูกต้อง', () => {
-    cy.contains('.pill', 'มีหลายโซน').find('input[type="checkbox"]').check({ force: true });
-    cy.contains('button', '+ เพิ่มโซน').click();
-    cy.get('.zones .zone-row').should('have.length.greaterThan', 1);
+  it('EDIT-005: เพิ่มและลบโซนได้', () => {
+    cy.contains('.pill', 'มีหลายโซน')
+      .find('input[type="checkbox"]')
+      .check({ force: true });
 
+    cy.contains('button', '+ เพิ่มโซน').click({ force: true });
     cy.get('.zones .zone-row').then(($rows) => {
       const n = $rows.length;
+      expect(n).to.be.greaterThan(1);
+
       if (n > 1) {
-        cy.get('.zones .zone-row').last().find('button.del').click();
+        cy.get('.zones .zone-row').last().find('button.del').click({ force: true });
         cy.get('.zones .zone-row').should('have.length', n - 1);
       }
     });
   });
 
-  it('EDIT-006: เมื่อบันทึกไม่สำเร็จ ระบบแสดงข้อความแจ้งเตือนข้อผิดพลาด', () => {
-    setValue('[data-testid="event-name"]', 'Fail Case');
+  it('EDIT-006: บันทึกไม่สำเร็จ แล้วแสดงข้อความแจ้งเตือนข้อผิดพลาด', () => {
+    setValue(getInputByLabel('ชื่อ *'), 'Fail Case');
     cy.intercept('PUT', '**/events/*', { statusCode: 500 }).as('saveFail');
     cy.window().then((win) => cy.stub(win, 'alert').as('alert'));
-    cy.get('[data-testid="btn-save"]').click();
+    cy.contains('button', 'บันทึก').click({ force: true });
 
     cy.wait('@saveFail');
     cy.get('@alert').should((stub) => {
