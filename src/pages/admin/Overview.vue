@@ -153,14 +153,17 @@ const addBtnPlus = { width:"20px", lineHeight:"20px", textAlign:"center", fontSi
 
 /* Surface */
 const surface = { 
-  background: color.card, 
-  borderRadius:"16px", 
+  background: color.card,
+  borderRadius: "16px",
   boxShadow: shadowMd,
-  padding:"26px 26px 80px",
-  width:"100%",          
-  maxWidth:"2000px",      
-  margin:"0 auto"       
+  padding: "26px 24px 40px",
+
+  /* ✅ ชิดซ้ายและจำกัดความกว้างให้อยู่เฉพาะกรอบฝั่งซ้าย */
+  width: "100%",
+  maxWidth: "780px",   // ปรับได้ 720–820 ตามที่ต้องการ
+  margin: "0"          // ไม่ให้ auto center
 };
+
 
 
 /* KPI */
