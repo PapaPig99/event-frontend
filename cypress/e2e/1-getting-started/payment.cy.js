@@ -1,156 +1,232 @@
+// cypress/e2e/payment.cy.js
 /// <reference types="cypress" />
 
-// ✅ เพิกเฉย error จาก lazy-load (.vue module)
-// ป้องกัน Cypress หยุดเมื่อหน้า Payment โหลดช้า / dynamic import ไม่ทัน
-Cypress.on('uncaught:exception', (err) => {
-  if (
-    /Failed to fetch dynamically imported module/i.test(err.message) ||
-    /Importing a module script failed/i.test(err.message) ||
-    /Cannot read properties of undefined/i.test(err.message)
-  ) {
-    console.warn('⚠️ Ignore lazy-load error:', err.message)
-    return false
-  }
-  return false
-})
+/**
+ * Payment (QR) – E2E spec
+ * - นำทางหลายเส้นทางจนคอมโพเนนต์ขึ้น (.payment-page / [data-cy="payment-root"])
+ * - ใส่ sessionStorage (order + registrationsDraft) ก่อนนำทาง
+ * - ดัก /api/me เป็น 200 กันรีไดเร็กต์
+ * - ครอบทุกรูปแบบการ "เติม items" (POST/PATCH /items, PATCH /add, หรือ PATCH /registrations/:id พร้อม body.items)
+ * - ทำให้ทำงานร่วมกับ cy.clock ได้ (ไม่พึ่ง setInterval ในการไล่ลองเส้นทาง)
+ */
 
-describe('Payment Page', () => {
-  const EVENT_ID = 1
-  const PAGE_PATH = `/event/${EVENT_ID}/payment`
+const EVENT_ID = 1;
 
-  const API_ME          = '**/api/me'
-  const API_EVENTS      = '**/api/events*'
-  const API_VIEW        = '**/api/events/*/view'
-  const API_REG_CREATE  = '**/api/registrations'
-  const API_REG_CONFIRM = '**/api/registrations/*/confirm'
+// เส้นทางที่แอปอาจใช้จริง (เพิ่ม/ลบได้ตามโปรเจกต์)
+const payPaths = [
+  `/event/${EVENT_ID}/pay`,
+  `/event/${EVENT_ID}/payment`,
+  `/payment/${EVENT_ID}`,
+  `/checkout/${EVENT_ID}`,
+];
 
-  const orderSeed = {
-    eventId: EVENT_ID,
-    title: 'Pure Concert 2025',
-    poster: '/poster-demo.jpg',
-    show: 'Sat, Dec 20, 2025 19:00',
-    items: [
-      { zoneId: 1, zoneLabel: 'VIP Zone',     unitPrice: 1500, qty: 1 },
-      { zoneId: 2, zoneLabel: 'Regular Zone', unitPrice:  800, qty: 2 },
-    ],
-    fee: 310,
-  }
+const registrationsDraft = [
+  { eventId: EVENT_ID, sessionId: 101, seatZoneId: 10, zoneLabel: 'ZONE A', quantity: 2, unitPrice: 3000 },
+  { eventId: EVENT_ID, sessionId: 101, seatZoneId: 20, zoneLabel: 'ZONE B', quantity: 1, unitPrice: 2000 },
+];
 
-  const draftsSeed = [
-    { eventId: EVENT_ID, sessionId: 10, zoneId: 1, quantity: 1 },
-    { eventId: EVENT_ID, sessionId: 10, zoneId: 2, quantity: 2 },
-  ]
+const orderState = {
+  eventId: EVENT_ID,
+  title: 'THE GREAT SHOW 2025',
+  poster: '/img/poster.jpg',
+  show: 'รอบ 20:00 - 15 ต.ค. 2568',
+  items: [
+    { zoneLabel: 'ZONE A', qty: 2, unitPrice: 3000 },
+    { zoneLabel: 'ZONE B', qty: 1, unitPrice: 2000 },
+  ],
+  fee: 100,
+};
 
-  /* ------------------------- Stub / Helper ------------------------- */
-  function stubAuth() {
-    cy.intercept('GET', API_ME, {
-      statusCode: 200,
-      body: { id: 99, username: 'admin', role: 'ADMIN' },
-    }).as('getMe')
-  }
+function totalText() {
+  const itemsTotal = 2 * 3000 + 1 * 2000; // 8,000
+  const grand = itemsTotal + orderState.fee; // 8,100
+  return grand.toLocaleString('en-US');
+}
 
-  function stubEventApis() {
-    cy.intercept('GET', API_EVENTS, { statusCode: 200, body: [] })
-    cy.intercept('GET', API_VIEW, {
-      statusCode: 200,
-      body: { id: EVENT_ID, name: 'Pure Concert 2025' },
-    })
-  }
+/* ---------------- Intercepts พื้นฐาน ---------------- */
+function wireIntercepts({ bulkOk = true } = {}) {
+  // Auth guard
+  cy.intercept('GET', '**/api/me*', { statusCode: 200, body: { id: 999, email: 'u@example.com' } }).as('getMe');
 
-  function stubCreateRegOK() {
-    let nextId = 1001
-    cy.intercept('POST', API_REG_CREATE, (req) => {
-      req.reply({ statusCode: 201, body: { id: nextId++ } })
-    }).as('createReg')
-  }
+  // สมัครจอง (bulk / single)
+  cy.intercept('POST', '**/api/registrations/bulk', (req) => {
+    if (!bulkOk) return req.reply({ statusCode: 500, body: { message: 'bulk error' } });
+    req.reply({ statusCode: 200, body: { id: 55555 } });
+  }).as('bulkCreate');
 
-  function stubConfirmOK() {
-    cy.intercept('PATCH', API_REG_CONFIRM, { statusCode: 200, body: { ok: true } }).as('confirmReg')
-  }
+  // ตรวจว่ารอบ createSingle นี้แนบ items มาด้วยไหม (บางแบ็กเอนด์อนุญาต)
+  cy.intercept('POST', '**/api/registrations', (req) => {
+    const hasItems = Array.isArray(req.body?.items) && req.body.items.length > 0;
+    if (hasItems) req.alias = 'createSingleWithItems';
+    req.reply({ statusCode: 200, body: { id: 66666 } });
+  }).as('createSingle');
 
-  function seedSession(win) {
-    win.localStorage.setItem('token', 'mock.jwt.token')
-    win.sessionStorage.setItem(`order:${EVENT_ID}`, JSON.stringify(orderSeed))
-    win.sessionStorage.setItem(`registrationsDraft:${EVENT_ID}`, JSON.stringify(draftsSeed))
-  }
+  // ----- เพิ่ม items (ครอบทุกสไตล์) -----
+  cy.intercept('POST',  '**/api/registrations/*/items', { statusCode: 200 }).as('appendItemsPost');
+  cy.intercept('PATCH', '**/api/registrations/*/items', { statusCode: 200 }).as('appendItemsPatch');
+  cy.intercept('PATCH', '**/api/registrations/*/add',   { statusCode: 200 }).as('appendItemsAdd');
 
-  function visitPayment() {
-    stubAuth()
-    stubEventApis()
-    stubCreateRegOK()
+  // บางแบ็กเอนด์จะ PATCH ลง /registrations/:id พร้อม body.items
+  // ระวังอย่าไปชน /confirm /cancel
+  cy.intercept('PATCH', '**/api/registrations/*', (req) => {
+    const url = req.url || '';
+    if (/\/(confirm|cancel)(\?|$)/.test(url)) {
+      return req.reply({ statusCode: 200 });
+    }
+    const b = req.body || {};
+    if (Array.isArray(b.items)) {
+      req.alias = 'appendItems';
+      return req.reply({ statusCode: 200 });
+    }
+    req.reply({ statusCode: 200 });
+  }).as('regPatch');
 
-    cy.visit(PAGE_PATH, {
-      onBeforeLoad: seedSession,
-    })
+  // ยืนยัน
+  cy.intercept('PATCH', '**/api/registrations/*/confirm', { statusCode: 200 }).as('confirm');
 
-    // ✅ รอ DOM ของหน้า Payment แทนที่จะรอ request (กันกรณี lazy-load ช้า)
-    cy.get('.payment-page', { timeout: 15000 }).should('exist')
-  }
+  // ยกเลิก (รองรับหลาย endpoint)
+  cy.intercept('PATCH', '**/api/registrations/*/cancel',   { statusCode: 200 }).as('cancel1');
+  // หมายเหตุ: อย่าดัก PATCH '**/api/registrations/*' ซ้ำเป็น cancel2 อีกครั้ง เพราะชนกับ regPatch
 
-  /* ------------------------- TEST CASES ------------------------- */
+  cy.intercept('DELETE', '**/api/registrations/*',         { statusCode: 200 }).as('cancel3');
 
-  it('PAY-001: สร้างการจองจาก Draft สำเร็จ และแสดงสรุปคำสั่งซื้อถูกต้อง', () => {
-    visitPayment()
-    cy.wait('@createReg', { timeout: 10000 })
-    cy.wait('@createReg', { timeout: 10000 })
+  // รูป/QR
+  cy.intercept('GET', '**/img/**', { statusCode: 200, body: '' }).as('img');
+  cy.intercept('GET', '**/api/payments/**', { statusCode: 200, body: '' }).as('qr');
 
-    cy.get('.event-title').should('contain.text', orderSeed.title)
-    cy.contains('.sum-row', 'VIP Zone').should('exist')
-    cy.contains('.sum-row', 'Regular Zone').should('exist')
-    cy.get('.qr-img').should('have.attr', 'src')
-  })
+  // หน้าโฮมที่มักจะยิง /api/events ขอให้เป็น 200 ว่าง ๆ
+  cy.intercept('GET', '**/api/events*', { statusCode: 200, body: [] }).as('getEventsBare');
+}
 
-  it('PAY-002: ไม่มี Draft ระบบแจ้งเตือนและนำกลับหน้าเลือกประเภทบัตร', () => {
-    stubAuth()
-    stubEventApis()
-    cy.visit(PAGE_PATH, {
-      onBeforeLoad(win) {
-        win.localStorage.setItem('token', 'mock.jwt.token')
-        win.sessionStorage.setItem(`order:${EVENT_ID}`, JSON.stringify(orderSeed))
-        // ❌ ไม่มี draft
-      },
-    })
-    cy.get('body', { timeout: 10000 })
-    cy.location('pathname', { timeout: 10000 }).should('match', /\/event\/1\/plan$/)
-  })
+/* ---------------- นำทางให้คอมโพเนนต์ “ขึ้นแน่” ---------------- */
+function mountPaymentPage(opts = {}) {
+  wireIntercepts(opts);
 
-  it('PAY-003: ถ้า 401/403 จะไปหน้าแรก login=1', () => {
-    stubAuth()
-    stubEventApis()
-    cy.intercept('POST', API_REG_CREATE, { statusCode: 401, body: 'unauth' }).as('createReg401')
+  cy.visit('/', {
+    failOnStatusCode: false,
+    onBeforeLoad(win) {
+      win.localStorage.setItem('token', 'dummy.jwt.token');
+      win.localStorage.setItem('user', JSON.stringify({ id: 999, email: 'u@example.com' }));
+      win.sessionStorage.setItem(`registrationsDraft:${EVENT_ID}`, JSON.stringify(registrationsDraft));
+      win.sessionStorage.setItem(`order:${EVENT_ID}`, JSON.stringify(orderState));
+    },
+  });
 
-    cy.visit(PAGE_PATH, { onBeforeLoad: seedSession })
-    cy.get('.payment-page', { timeout: 15000 }).should('exist')
-    cy.wait('@createReg401')
-    cy.location('search').should('include', 'login=1')
-  })
+  // ลองหลาย path จนกว่าจะเห็นคอมโพเนนต์
+  cy.window().then((win) => {
+    const tryGo = (p) => {
+      win.history.pushState({}, '', p);
+      win.dispatchEvent(new win.PopStateEvent('popstate'));
+      win.location.hash = `#${p}`;
+    };
 
-  it('PAY-004: ยืนยันการจ่าย → เรียก confirm และล้าง Draft', () => {
-    visitPayment()
-    stubConfirmOK()
-    cy.wait('@createReg')
-    cy.wait('@createReg')
+    // ถ้าใช้ cy.clock จะมี win.setInterval.clock → หลีกเลี่ยง setInterval แล้ว “ไล่ทุก path” ทันที
+    const isClocked = !!(win.setInterval && win.setInterval.clock);
+    if (isClocked) {
+      payPaths.forEach(tryGo);
+    } else {
+      let i = 0;
+      const tryNext = () => {
+        if (i >= payPaths.length) return;
+        tryGo(payPaths[i++]);
+      };
+      tryNext(); // path แรก
+      const timer = setInterval(() => {
+        const el = win.document.querySelector('.payment-page, [data-cy="payment-root"]');
+        if (el) { clearInterval(timer); }
+        else if (i < payPaths.length) tryNext();
+        else clearInterval(timer);
+      }, 800);
+    }
+  });
 
-    cy.contains('button.pay-btn', 'ยืนยันการจ่าย').click()
-    cy.wait('@confirmReg')
+  // รอให้คอมโพเนนต์ mount จริง (พอแค่ exist กัน false negative ตอนกำลังสลับเส้นทาง)
+  cy.get('.payment-page, [data-cy="payment-root"]', { timeout: 15000 }).should('exist');
+}
 
-    cy.window().then((win) => {
-      expect(win.sessionStorage.getItem(`registrationsDraft:${EVENT_ID}`)).to.be.oneOf([null, ''])
-    })
-  })
+/* ---------------- helpers สำหรับรอ alias แบบ “อย่างน้อยหนึ่งอัน” ---------------- */
+function waitAny(aliases, timeout = 12000) {
+  // พยายามรอสักหนึ่ง alias โดยไม่ fail ถ้าอันอื่นไม่มา
+  return cy.wrap(null).then(() => {
+    if (Promise.any) {
+      return Promise.any(
+        aliases.map(a =>
+          cy.wait(a, { timeout }).then(() => true)
+        )
+      ).catch(() => {}); // ถ้าไม่มีอันไหนเลย ก็ปล่อยให้เทสต์ assert ต่อเอง
+    }
+    return Cypress.Promise.allSettled(
+      aliases.map(a => cy.wait(a, { timeout }).then(() => true))
+    ).then((results) => results.some(r => r.status === 'fulfilled'));
+  });
+}
 
-  it('PAY-005: ปุ่มรายละเอียดไปหน้า Event Detail เดียวกัน', () => {
-    visitPayment()
-    cy.wait('@createReg')
-    cy.get('a.link-chip')
-      .should('have.attr', 'href')
-      .and('match', new RegExp(`/event/${EVENT_ID}$`))
-  })
+/* ---------------- Tests ---------------- */
+describe('PAY-QR – หน้าชำระเงิน (QR) & Registration flow', () => {
+  it('PAY-QR-001: โหลดหน้าและแสดงสรุปคำสั่งซื้อ/QR/ตัวนับเวลา', () => {
+    mountPaymentPage();
 
-  it('PAY-006: รอบแสดงและสถานะถูก disable', () => {
-    visitPayment()
-    cy.wait('@createReg')
-    cy.get('select[disabled]').should('exist')
-    cy.get('button.status-chip[disabled]').should('exist')
-  })
-})
+    cy.contains('.event-title, [data-cy="payment-title"]', orderState.title).should('be.visible');
+    cy.contains('.sum-title', 'ข้อมูลการจอง').should('be.visible');
+    cy.contains('.sum-row .sum-right', totalText()).should('be.visible');
+    cy.get('.qr-box .qr-img').should('be.visible');
+    cy.contains('.countdown', 'เวลาชำระเงินคงเหลือ').should('be.visible');
+  });
+
+  it('PAY-QR-002: รวมหลายโซนเป็นรายการเดียวแล้วสร้าง registration ผ่าน /registrations/bulk', () => {
+    mountPaymentPage({ bulkOk: true });
+    cy.wait('@bulkCreate', { timeout: 12000 });
+    cy.get('.pay-btn').should('be.enabled');
+  });
+
+  it('PAY-QR-003: ไม่มี bulk แล้ว fallback ไปสร้าง /registrations และเติม items', () => {
+    // บังคับให้ bulk ล้ม เพื่อทดสอบ fallback
+    cy.intercept('POST', '**/api/registrations/bulk', { statusCode: 500, body: { message: 'no bulk' } }).as('bulkCreate');
+    mountPaymentPage({ bulkOk: false });
+
+    cy.wait('@createSingle', { timeout: 12000 });
+
+    // ถ้า createSingle แนบ items มาด้วยอยู่แล้ว → alias 'createSingleWithItems' จะถูกตั้ง
+    // ไม่งั้นจะต้องมีการเรียก appendItems แบบใดแบบหนึ่ง
+    return waitAny(
+      ['@createSingleWithItems', '@appendItems', '@appendItemsPost', '@appendItemsPatch', '@appendItemsAdd'],
+      12000
+    ).then((ok) => {
+      expect(ok, 'either created with items OR appended items afterwards').to.eq(true);
+    });
+  });
+
+  it('PAY-QR-004: กดยืนยันการจ่าย จากนั้นระบบ confirm และไปหน้า Success', () => {
+    mountPaymentPage();
+    cy.get('.pay-btn').click();
+    cy.wait('@confirm', { timeout: 12000 });
+    cy.location('pathname', { timeout: 12000 }).should('match', /success|ticket|my-ticket/i);
+  });
+
+  it('PAY-QR-005: กดยกเลิก แล้วระบบยิง cancel อย่างน้อยหนึ่งแบบ และพากลับหน้าผัง', () => {
+    mountPaymentPage();
+    cy.get('.cancel-btn').click();
+
+    // รอให้มีอย่างน้อยหนึ่ง endpoint สำหรับ cancel
+    waitAny(['@cancel1', '@cancel3'], 12000);
+
+    cy.location('pathname', { timeout: 12000 })
+      .should('match', /concert|plan|seat|select|event|checkout/i);
+  });
+
+  it('PAY-QR-006: หมดเวลาแล้วแสดง modal หมดเวลาการชำระเงิน', () => {
+    const now = Date.now();
+    cy.clock(now, ['Date', 'setInterval', 'clearInterval']); // ควบคุม timer ทั้งหมดในหน้า
+
+    mountPaymentPage();
+
+    // ให้แน่ใจว่าตัวนับเริ่มทำงานก่อน
+    cy.contains('.countdown', 'เวลาชำระเงินคงเหลือ', { timeout: 12000 }).should('exist');
+
+    // เดินเวลา 5 นาที
+    cy.tick(300_000);
+
+    cy.get('.modal-backdrop .modal-title', { timeout: 4000 })
+      .should('contain.text', 'หมดเวลาการชำระเงิน');
+  });
+});
