@@ -19,6 +19,9 @@ const regByZone = ref({})           // { [zoneId]: regId }
 const drafts = ref([])              // registrationsDraft ที่อ่านมาจากหน้าเดิม
 
 
+
+
+
 // โหลด draft ที่ส่งมาจากหน้าก่อนหน้า
 function getDrafts() {
   // 1) จาก router state
@@ -28,19 +31,145 @@ function getDrafts() {
   // 2) จาก sessionStorage
   try {
     const raw = sessionStorage.getItem(`registrationsDraft:${route.params.id}`)
-    if (!raw) return []
-    const d = JSON.parse(raw)
-    if (Array.isArray(d) && d.length) return d
+    if (raw) {
+      const d = JSON.parse(raw)
+      if (Array.isArray(d) && d.length) return d
+    }
   } catch {}
-  // 3) รองรับโค้ดเก่า (registrationDraft เดี่ยว)
-  const single = history.state?.registrationDraft ||
-                 JSON.parse(sessionStorage.getItem(`registrationDraft:${route.params.id}`) || 'null')
-  if (single && single.eventId && single.sessionId && single.zoneId && single.quantity) {
-    return [single]
-  }
+
+  // 3) รองรับเก่า: registrationDraft ตัวเดียว
+  try {
+    const single = history.state?.registrationDraft ||
+                   JSON.parse(sessionStorage.getItem(`registrationDraft:${route.params.id}`) || 'null')
+    if (single && single.eventId && single.sessionId && single.zoneId && single.quantity) {
+      return [single]
+    }
+  } catch {}
+
   return []
 }
 
+function toNum(v){ const n = Number(v); return Number.isFinite(n) ? n : null }
+
+function isDraftComplete(d){
+  return [d?.eventId, d?.sessionId, d?.zoneId, d?.quantity]
+    .every(v => Number.isFinite(Number(v)) && Number(v) > 0)
+}
+
+// helper: ดึง id ให้ชัวร์ (เอา seatZoneId ก่อน ถ้าไม่มีค่อย fallback เป็น zoneId)
+function pickIds(d, route) {
+  const eventId   = Number(d.eventId ?? d.event_id ?? route.params.id)
+  const sessionId = Number(d.sessionId ?? d.session_id)
+  const seatZoneId = Number(
+    d.seatZoneId ?? d.seat_zone_id ?? d.zoneId ?? d.zone_id
+  )
+  const quantity  = Number(d.quantity)
+  return { eventId, sessionId, seatZoneId, quantity }
+}
+
+
+
+
+
+// ========== NEW: รวมหลายโซนเป็นรายการเดียว ==========
+// ========== NEW: รวมหลายโซนเป็นรายการเดียว ==========
+function collectItemsFromDrafts(arr) {
+  return arr
+    .map(d => {
+      const seatZoneId = Number(d.seatZoneId ?? d.seat_zone_id ?? d.zoneId ?? d.zone_id)
+      const quantity   = Number(d.quantity)
+      const unitPrice  = Number(d.unitPrice ?? d.price ?? 0)
+      const zoneLabel  = d.zoneLabel ?? d.label ?? ''
+      return { seatZoneId, quantity, unitPrice, zoneLabel }
+    })
+    .filter(x => Number.isFinite(x.seatZoneId) && x.seatZoneId > 0 && Number.isFinite(x.quantity) && x.quantity > 0)
+}
+
+async function upsertRegistrationBulk(eventId, sessionId, items) {
+  const payload = {
+    eventId,
+    sessionId,
+    items: items.map(it => ({
+      seatZoneId: it.seatZoneId,
+      quantity:   it.quantity,
+      unitPrice:  it.unitPrice,
+      zoneLabel:  it.zoneLabel
+    }))
+  }
+
+  const bulkCandidates = [
+    { m: 'post', url: '/registrations/bulk' },
+    { m: 'post', url: '/registrations' },
+  ]
+
+  for (const c of bulkCandidates) {
+    try {
+      const { data, status } = await api[c.m](c.url, payload)
+      const id = Number(data?.id || data?.registrationId)
+      if (status >= 200 && status < 300 && Number.isFinite(id)) return id
+    } catch (e) {
+      const msg = e?.response?.data?.message || e?.message || ''
+      const match = /id\s*=\s*(\d+)/i.exec(msg)
+      if (match) {
+        const existingId = Number(match[1])
+        if (Number.isFinite(existingId)) {
+          await appendItemsToRegistration(existingId, items)
+          return existingId
+        }
+      }
+    }
+  }
+
+  const base = await createRegistrationShell(eventId, sessionId, items[0]?.seatZoneId, items[0]?.quantity)
+  if (items.length > 1) await appendItemsToRegistration(base, items.slice(1))
+  return base
+}
+
+async function createRegistrationShell(eventId, sessionId, seatZoneId, quantity) {
+  const payload = {
+    eventId, sessionId, seatZoneId, quantity,
+    zoneId: seatZoneId,
+    event:    { id: eventId },
+    session:  { id: sessionId },
+    seatZone: { id: seatZoneId },
+    zone:     { id: seatZoneId },
+  }
+
+  try {
+    const { data, status } = await api.post('/registrations', payload)
+    const id = Number(data?.id || data?.registrationId)
+    if (status >= 200 && status < 300 && Number.isFinite(id)) return id
+    throw new Error('no id')
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.message || ''
+    const match = /id\s*=\s*(\d+)/i.exec(msg)
+    if (match) return Number(match[1])
+    throw e
+  }
+}
+
+async function appendItemsToRegistration(registrationId, items) {
+  if (!items?.length) return
+  const body = {
+    items: items.map(it => ({
+      seatZoneId: it.seatZoneId,
+      quantity:   it.quantity,
+      unitPrice:  it.unitPrice,
+      zoneLabel:  it.zoneLabel
+    }))
+  }
+  const appendCandidates = [
+    { m: 'post',  url: `/registrations/${registrationId}/items` },
+    { m: 'patch', url: `/registrations/${registrationId}/items` },
+    { m: 'patch', url: `/registrations/${registrationId}/add` },
+    { m: 'patch', url: `/registrations/${registrationId}`, body },
+  ]
+  for (const c of appendCandidates) {
+    try { await api[c.m](c.url, c.body ?? body); return }
+    catch (_) { /* try next */ }
+  }
+  console.warn('[appendItemsToRegistration] ไม่มี endpoint สำหรับเพิ่มรายการ — จะจองเฉพาะโซนแรก')
+}
 
 async function createRegistrations() {
   drafts.value = getDrafts()
@@ -54,88 +183,59 @@ async function createRegistrations() {
   regIds.value = []
   regByZone.value = {}
 
-  // ยิงทีละรายการ (sequential) – ปลอดภัยกว่าเรื่อง race/409
-  for (const d of drafts.value) {
-    const camel = {
-      eventId: Number(d.eventId),
-      sessionId: Number(d.sessionId),
-      zoneId: Number(d.zoneId),
-      quantity: Number(d.quantity)
-    }
+  try {
+    const items = collectItemsFromDrafts(drafts.value)
+    const { eventId, sessionId } = pickIds(drafts.value[0], route)
 
-    // 1) ลอง camelCase ก่อน
-    try {
-      const { data } = await api.post('/registrations', camel)
-      const id = Number(data?.id || data?.registrationId)
-      if (!id) throw new Error('No registration id')
-      regIds.value.push(id)
-      regByZone.value[String(d.zoneId)] = id
-      continue
-    } catch (err1) {
-      const s = err1?.response?.status
-      if (s === 401 || s === 403) {
-        router.replace({ name: 'home', query: { login: 1, redirect: route.fullPath } })
-        creating.value = false
-        return
-      }
-      // 2) ลอง snake_case
-      const snake = {
-        event_id: Number(d.eventId),
-        session_id: Number(d.sessionId),
-        zone_id: Number(d.zoneId),
-        quantity: Number(d.quantity)
-      }
-      try {
-        const { data } = await api.post('/registrations', snake)
-        const id = Number(data?.id || data?.registrationId)
-        if (!id) throw new Error('No registration id')
-        regIds.value.push(id)
-        regByZone.value[String(d.zoneId)] = id
-        continue
-      } catch (err2) {
-        console.error('POST /registrations failed:', err2?.response?.status, err2?.response?.data || err2.message)
-        alert(`เริ่มการจองโซน ${d.zoneId} ไม่สำเร็จ กรุณาลองใหม่`)
-        // ยกเลิกที่สร้างไปแล้ว
-        await cancelAllRegistrations(true)
-        router.replace({ name: 'concert-plan', params: { id: route.params.id } })
-        creating.value = false
-        return
-      }
+    const regId = await upsertRegistrationBulk(eventId, sessionId, items)
+    regIds.value = [regId]
+    items.forEach(it => { regByZone.value[String(it.seatZoneId)] = regId })
+
+    setQrForRegistrations()
+    startCountdown()
+  } catch (err) {
+    const s = err?.response?.status
+    if (s === 401 || s === 403) {
+      router.replace({ name: 'home', query: { login: 1, redirect: route.fullPath } })
+    } else {
+      console.error('Create registrations (bulk) failed:', err?.response?.data || err)
+      alert('เริ่มการจองไม่สำเร็จ กรุณาลองใหม่')
+      await cancelAllRegistrations(true)
+      router.replace({ name: 'concert-plan', params: { id: route.params.id } })
     }
+  } finally {
+    creating.value = false
   }
-
-  // === ตั้งค่า QR ===
-  setQrForRegistrations()
-
-  // เริ่มนับเวลา
-  startCountdown()
-  creating.value = false
 }
 
 
 async function confirmPayment() {
-  if (!regIds.value.length) {
-    alert('ยังไม่ได้เริ่มการจอง กรุณาลองใหม่')
-    return
-  }
+  if (!regIds.value.length) { alert('ยังไม่ได้เริ่มการจอง'); return }
   confirming.value = true
   try {
-    // ยืนยันทุก registration
-    await Promise.all(
-      regIds.value.map(id =>
-        api.patch(`/registrations/${id}/confirm`, {
-          paymentReference: `QR-${Date.now()}`
-        })
-      )
-    )
+    await Promise.all(regIds.value.map(id =>
+      api.patch(`/registrations/${id}/confirm`, { paymentReference: `QR-${Date.now()}` })
+    ))
 
-    // ล้าง draft ทั้งสองแบบ
+    // เก็บ regIds ให้หน้า success ใช้
+    sessionStorage.setItem(`successRegIds:${route.params.id}`, JSON.stringify(regIds.value))
+    console.log('[confirmPayment] will nav to ticket-success with', {
+  id: String(route.params.id),
+  regIds: regIds.value
+})
+    // 1) ไปหน้า success ก่อน (ให้ guardเช็ค auth จาก token ที่ยังอยู่แน่นอน)
+    await router.replace({
+      name: 'ticket-success',
+      params: { id: String(route.params.id) },
+      query: { t: Date.now() },
+      state: { regIds: regIds.value }
+    })
+
+    // 2) ค่อยลบ draft หลังจากเปลี่ยนหน้าแล้ว (หรือไปทำใน TicketSuccess)
     sessionStorage.removeItem(`registrationDraft:${route.params.id}`)
     sessionStorage.removeItem(`registrationsDraft:${route.params.id}`)
-
-    router.replace({ name: 'ticket-success', params: { id: route.params.id }, state: { regs: regIds.value } })
   } catch (e) {
-    console.error('PATCH /confirm error:', e?.response?.status, e?.response?.data || e.message)
+    console.error('[confirmPayment] failed:', e?.response?.data || e)
     alert('ยืนยันการจ่ายไม่สำเร็จ กรุณาลองใหม่')
   } finally {
     confirming.value = false
@@ -268,31 +368,25 @@ async function cancelAllRegistrations(silent = false) {
     if (!regIds.value.length) return
     for (const id of regIds.value) {
       const candidates = [
-        { m: 'post',  p: `/registrations/${id}/cancel` },
-        { m: 'patch', p: `/registrations/${id}/cancel` },
-        { m: 'patch', p: `/registrations/${id}`, body: { status: 'CANCELLED' } },
+        { m: 'patch',  p: `/registrations/${id}/cancel` },
+        { m: 'patch',  p: `/registrations/${id}`, body: { status: 'CANCELLED' } },
         { m: 'delete', p: `/registrations/${id}` },
       ]
+      let done = false
       for (const c of candidates) {
         try {
-          if (c.m === 'post')   await api.post(c.p, c.body || {})
           if (c.m === 'patch')  await api.patch(c.p, c.body || {})
           if (c.m === 'delete') await api.delete(c.p)
-          break
-        } catch (e) { /* ลองอันถัดไป */ }
+          done = true; break
+        } catch (e) { /* ลองตัวถัดไป */ }
       }
+      if (!done) console.warn('Cancel failed for', id)
     }
   } catch (e) {
     if (!silent) alert('ยกเลิกไม่สำเร็จ กรุณาลองใหม่')
   }
 }
 
-async function cancelOrder() {
-  await cancelAllRegistrations()
-  sessionStorage.removeItem(`registrationDraft:${route.params.id}`)
-  sessionStorage.removeItem(`registrationsDraft:${route.params.id}`)
-  router.replace({ name: 'concert-plan', params: { id: route.params.id } })
-}
 
 
 async function cancelOrder() {

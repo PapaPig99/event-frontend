@@ -390,7 +390,7 @@ async function reserveSelected(sessionId, eventId) {
     }
   }
 
-  return { mode: 'sequential', results }
+  return { mode: 'client-only', results: [] }
 }
 
 /* ===== Proceed (validate ต่อโซน + บันทึก order/draft) ===== */
@@ -405,7 +405,7 @@ async function goToPayment() {
     return
   }
 
-  // ตรวจความพอ “ต่อโซน”
+  // ตรวจความพอรายโซน จาก live availability + capacity
   for (const it of selectedItems.value) {
     const z = zones.value.find(zz => String(zz.id) === String(it.zoneId))
     if (!z) continue
@@ -419,21 +419,11 @@ async function goToPayment() {
     }
   }
 
-  const eventId   = route.params.id
+  const eventId   = Number(route.params.id)
   const sessionId = await getCurrentSessionId()
   if (!sessionId) { alert('ไม่พบรอบการแสดง'); return }
 
-  // 🔒 ล็อกกับ API (หลายโซน)
-  let lock
-  try {
-    lock = await reserveSelected(sessionId, eventId)
-  } catch (e) {
-    alert(e?.message || 'ไม่สามารถล็อกที่นั่งได้ กรุณาลองใหม่')
-    await refreshAvailabilityForSelectedShow()   // sync availability ใหม่
-    return
-  }
-
-  // === order สำหรับหน้า payment ===
+  // === order (ไว้โชว์ที่ payment) ===
   const order = {
     eventId,
     title: title.value,
@@ -441,29 +431,42 @@ async function goToPayment() {
     show: selectedShow.value,
     items: selectedItems.value,
     fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10),
-    lock, // เก็บผลล็อกไว้
   }
 
-  // === draft หลายโซน ===
-  const registrationsDraft = selectedItems.value.map(it => ({
-    eventId: Number(eventId),
-    sessionId: Number(sessionId),
-    zoneId: Number(it.zoneId),
-    quantity: Number(it.qty),
-  }))
+  // === draft หลายโซน (สำคัญ) ===
+const registrationsDraft = selectedItems.value.map(it => ({
+  eventId: Number(eventId),
+  sessionId: Number(sessionId),
+  // เก็บทั้งคู่ให้แน่ใจว่าหน้า payment ใช้ได้ทุกแบบ
+  zoneId: Number(it.zoneId),
+  seatZoneId: Number(it.zoneId),
+  quantity: Number(it.qty),
+}))
+
+
+router.push({
+  name: 'payment',
+  params: { id: eventId },
+  state: {
+    order,
+    registrationsDraft,
+    registrationDraft: registrationsDraft[0] || null
+  }
+})
+// (แถม) ถ้าคุณเก็บลง sessionStorage ด้วย ให้ใช้ key เดิม แต่ข้อมูลใหม่ที่มี seatZoneId
+sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(registrationsDraft))
+
+  // ✅ ตรงนี้คือที่ error ของคุณ: ต้องประกาศก่อนใช้
   const fallbackFirst = registrationsDraft[0] || null
 
-  router.push({
-    name: 'payment',
-    params: { id: eventId },
-    state: { order, registrationsDraft, registrationDraft: fallbackFirst }
-  })
-
+  // persist กัน refresh
   sessionStorage.setItem(`order:${eventId}`, JSON.stringify(order))
   sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(registrationsDraft))
   if (fallbackFirst) {
     sessionStorage.setItem(`registrationDraft:${eventId}`, JSON.stringify(fallbackFirst))
   }
+
+  
 }
 
 
