@@ -112,7 +112,7 @@ const qSport = ref("")
 const lc = (v) => String(v ?? "").toLowerCase()
 const catKey = (c) => {
   const s = lc(c)
-  if (s.includes("concert") || s.includes("คอนเสิร์")) return "concert"
+  if (s.includes("concert") || s.includes("คอนเสิร์ต")) return "concert"
   if (s.includes("show") || s.includes("แสดง")) return "show"
   if (s.includes("education") || s.includes("ศึกษา")) return "education"
   if (s.includes("business") || s.includes("ธุรกิจ")) return "business"

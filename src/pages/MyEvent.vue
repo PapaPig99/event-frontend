@@ -146,6 +146,7 @@ onMounted(async () => {
     })
     if (!Array.isArray(regs) || regs.length === 0) {
       cards.value = []
+      
       return
     }
 

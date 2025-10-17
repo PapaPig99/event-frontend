@@ -13,9 +13,15 @@ function toDateLabel(iso){
   return new Date(iso).toLocaleDateString('en-US',
     { weekday:'short', month:'short', day:'2-digit', year:'numeric' })
 }
-function makeShowLabel(dateIso, timeStr){
-  return `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
+
+function makeShowLabel(dateIsoOrDateTime, timeStr){
+  // รองรับทั้ง startAt (มีเวลาในตัว) หรือแยกวัน/เวลา
+  const d = dateIsoOrDateTime ? new Date(dateIsoOrDateTime) : null
+  const datePart = d ? toDateLabel(d.toISOString()) : toDateLabel(null)
+  const timePart = timeStr || (d ? toTimeLabel(`${d.getHours()}`.padStart(2,'0')+':' + `${d.getMinutes()}`.padStart(2,'0')) : '')
+  return `${datePart} ${toTimeLabel(timePart)}`
 }
+
 /* ===== Router ===== */
 const router = useRouter()
 const route  = useRoute()
@@ -85,9 +91,11 @@ function buildShows(merged) {
   sessionsRaw.value = Array.isArray(merged.sessions) ? merged.sessions : []
 
   if (sessionsRaw.value.length > 0){
-    const d = merged.startDate || merged.start_date || merged.startDateRaw
     sessionsRaw.value.forEach(s => {
-      const label = makeShowLabel(d, s.start_time || s.startTime)
+      const startDateTime = s.startAt || s.start_at || s.startDate || s.date || null
+      const startTime = s.startTime || s.start_time || null
+      const label = s.name || makeShowLabel(startDateTime, startTime)
+
       out.push(label)
       sessionLabelToId.value[label] = s.id
     })
@@ -110,6 +118,7 @@ function buildShows(merged) {
 onMounted(async () => {
   const id = routeId.value
   const lite = readEventLite(id)
+  const passedSessionId = history.state?.sessionId
 
   // ใส่ค่าจาก lite ก่อน (หน้าโหลดไว)
   if (lite) {
@@ -131,7 +140,23 @@ onMounted(async () => {
     seatmap.value = merged.seatmapImageUrl || merged.detailImageUrl || seatmap.value
 
     shows.value = buildShows(merged)
-    selectedShow.value = shows.value[0]
+
+    if (passedSessionId && sessionsRaw.value.length) {
+   const s = sessionsRaw.value.find(x => String(x.id) === String(passedSessionId))
+   if (s) {
+     const label = (s.name) || makeShowLabel(
+       s.startAt || s.start_at || s.startDate || s.date,
+       s.startTime || s.start_time
+     )
+     if (shows.value.includes(label)) selectedShow.value = label
+     else selectedShow.value = shows.value[0]
+   } else {
+     selectedShow.value = shows.value[0]
+   }
+ } else {
+   selectedShow.value = shows.value[0]
+ }
+
     // ข้ามหน้า ถ้าไม่มีผัง
 if (!hasSeatmap.value) {
   goToSeatzone()
@@ -204,29 +229,35 @@ function qtyClass(n){
 }
 
 // หา sessionId จาก label ที่เลือก
-async function getCurrentSessionId(){
-  // 1) map จาก label -> id (ถ้า build แล้ว)
+async function getCurrentSessionId() {
+  // 1) map ตรง ๆ
   let sid = sessionLabelToId.value?.[selectedShow.value]
+
   // 2) ถ้ารอบเดียว
   if (!sid && sessionsRaw.value?.length === 1) sid = sessionsRaw.value[0]?.id
-  // 3) ถ้ายังไม่ได้ map (กรณีเข้าหน้าตรง ๆ) ลองโหลด /view มาสร้าง map
+
+  // 3) fallback โหลด /view เมื่อยัง map ไม่ได้จริง ๆ
   if (!sid) {
-    try{
+    try {
       const id = routeId.value
       const res = await fetch(`/api/events/${id}/view`)
-      if (res.ok){
+      if (res.ok) {
         const api = await res.json()
-        const d = api.startDate || api.start_date
-        const options = (api.sessions||[]).map(s => ({
-          id: s.id, label: makeShowLabel(d, s.start_time || s.startTime)
-        }))
+        const options = (api.sessions || []).map(s => {
+          const dt = s.startAt || s.start_at || s.startDate || s.date
+          const tm = s.startTime || s.start_time
+          return { id: s.id, label: s.name || makeShowLabel(dt, tm) }
+        })
         const found = options.find(o => o.label === selectedShow.value)
         sid = found?.id || options[0]?.id
       }
-    }catch(e){ console.warn('map session failed', e) }
+    } catch (e) {
+      console.warn('map session failed', e)
+    }
   }
   return sid
 }
+
 
 // โหลด availability 1 ครั้ง (ใช้ตอนเปิดโมดัล + ตอนเปลี่ยนรอบ)
 async function loadAvailOnce(){
@@ -248,12 +279,17 @@ async function loadAvailOnce(){
   }}
 
 
-  async function openAvail(){
+async function openAvail(){
   showAvail.value = true
-  await loadAvailOnce()
+  await loadAvailOnce()               // ← ดึงตาม selectedShow ปัจจุบัน
   if (availTimer) clearInterval(availTimer)
-  availTimer = setInterval(loadAvailOnce, 5000) // refresh 5s
+  availTimer = setInterval(loadAvailOnce, 5000)
 }
+watch(selectedShow, async () => {
+  if (showAvail.value) await loadAvailOnce()  // ← เปลี่ยนรอบระหว่างเปิดโมดัล → รีโหลด
+})
+onUnmounted(() => { if (availTimer){ clearInterval(availTimer); availTimer = null } })
+
 function closeAvail(){
   showAvail.value = false
   if (availTimer){ clearInterval(availTimer); availTimer = null }
