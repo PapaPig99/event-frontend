@@ -52,6 +52,7 @@ function mapEvent(e: AnyEvent) {
     img: toAbs(first(e.poster_image_url, e.posterImageUrl, e.detail_image_url, e.detailImageUrl)),
     category: e.category ?? e.type ?? '',
     tags: Array.isArray(e.tags) ? e.tags : [],
+    status: e.status ?? '',
   }
 }
 
@@ -82,7 +83,8 @@ const filtered = computed(() => {
 
     const matchQ   = !term   || bag.some(t => t.includes(term))
     const matchCat = !wanted || String(e.category ?? '').toLowerCase().includes(wanted)
-    return matchQ && matchCat
+    const matchStatus = e.status === 'OPEN'   
+  return matchQ && matchCat && matchStatus 
   })
 })
 

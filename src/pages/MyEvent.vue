@@ -38,14 +38,18 @@
           <p class="date">{{ formatDate(event.date) }}</p>
           <h3 class="event-title">{{ event.title }}</h3>
           <p class="location">{{ event.location }}</p>
-          <!-- ✅ แสดงรอบงาน -->
-<p class="round" style="margin: 4px 0 6px; color:#ED3F27; font-weight:700;">
+<p class="round" style="margin:4px 0 6px; color:#ED3F27; font-weight:700;">
   {{ event.roundLabel }}
 </p>
-<!-- ✅ แสดงจำนวนที่นั่ง -->
+
+<p v-if="event.zoneName" class="zone" style="margin: 0 0 6px; color:#111827;">
+  โซน: <strong>{{ event.zoneName }}</strong>   <!-- ✅ โชว์โซน -->
+</p>
+
 <p class="qty" style="margin: 0 0 12px; color:#374151;">
   จำนวนที่นั่ง: <strong>{{ event.quantity }}</strong>
 </p>
+
           <!-- <button class="view-btn" @click="viewTicket(event.registrationId)">
             <i class="fa-solid fa-ticket"></i><span>View Ticket</span>
           </button> -->
@@ -219,6 +223,7 @@ onMounted(async () => {
     roundLabel: resolveRoundLabel(ev, r),
         registrationStatus: r.registrationStatus,
         paymentStatus: r.paymentStatus,
+        zoneName: r.zoneName || '',
         _imgCandidates: candidates,
         _imgIdx: 0,
         currentImage: candidates[0] || '',
