@@ -188,7 +188,7 @@ const grandTotal = computed(() =>
 
 onMounted(() => {
   loadOrder()
-  createRegistration()
+  createRegistrations()
 })
 
 
@@ -253,45 +253,16 @@ function setQrForRegistrations() {
 
 async function onTimeout() {
   isTimeoutOpen.value = true;
-  await cancelRegistration(true); // ยกเลิกฝั่งแบ็กเอนด์ (ถ้ามี endpoint)
+  await cancelAllRegistrations(true);
 }
 
 function goHomeAfterTimeout() {
   isTimeoutOpen.value = false;
   router.replace({ name: 'home' });
 }
-async function cancelRegistration(silent = false) {
-  try {
-    if (!regId.value) return;
 
-    // พยายามหลาย endpoint ตามที่แบ็กเอนด์อาจมีจริง
-    const candidates = [
-      { m: 'post',  p: `/registrations/${regId.value}/cancel` },
-      { m: 'patch', p: `/registrations/${regId.value}/cancel` },
-      { m: 'patch', p: `/registrations/${regId.value}`, body: { status: 'CANCELLED' } },
-      { m: 'delete', p: `/registrations/${regId.value}` },
-    ];
 
-    for (const c of candidates) {
-      try {
-        if (c.m === 'post')   await api.post(c.p, c.body || {});
-        if (c.m === 'patch')  await api.patch(c.p, c.body || {});
-        if (c.m === 'delete') await api.delete(c.p);
-        break; // สำเร็จอันไหนก่อนจบเลย
-      } catch (e) {
-        // ลองตัวถัดไป
-      }
-    }
-  } catch (e) {
-    if (!silent) alert('ยกเลิกไม่สำเร็จ กรุณาลองใหม่');
-  }
-}
 
-async function cancelOrder() {
-  await cancelRegistration();
-  sessionStorage.removeItem(`registrationDraft:${route.params.id}`);
-  router.replace({ name: 'concert-plan', params: { id: route.params.id } });
-}
 async function cancelAllRegistrations(silent = false) {
   try {
     if (!regIds.value.length) return
@@ -308,15 +279,21 @@ async function cancelAllRegistrations(silent = false) {
           if (c.m === 'patch')  await api.patch(c.p, c.body || {})
           if (c.m === 'delete') await api.delete(c.p)
           break
-        } catch (e) {
-          // ลองอันถัดไป
-        }
+        } catch (e) { /* ลองอันถัดไป */ }
       }
     }
   } catch (e) {
     if (!silent) alert('ยกเลิกไม่สำเร็จ กรุณาลองใหม่')
   }
 }
+
+async function cancelOrder() {
+  await cancelAllRegistrations()
+  sessionStorage.removeItem(`registrationDraft:${route.params.id}`)
+  sessionStorage.removeItem(`registrationsDraft:${route.params.id}`)
+  router.replace({ name: 'concert-plan', params: { id: route.params.id } })
+}
+
 
 async function cancelOrder() {
   await cancelAllRegistrations()
