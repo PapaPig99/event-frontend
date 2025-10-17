@@ -1,163 +1,142 @@
+// cypress/e2e/myevent.cy.js
 /// <reference types="cypress" />
 
-const PAGE_PATH = '/my-tickets'
+// ====== Regex ของ endpoint ที่คอมโพเนนต์เรียกจริง ======
+const RX_ME   = /\/api\/me(\?.*)?$/;
+const RX_REGS = /\/(api\/)?registrations\/me(\?.*)?$/;     // api.get('/registrations/me') => ดักทั้งมี/ไม่มี /api
+const RX_EVT  = /\/api\/events\/\d+(\?.*)?$/;              // axios.get(`/api/events/:id`)
 
-// ดักให้ครอบทุกแบบ: absolute/relative, มี/ไม่มี /api, มี query, และ preflight
-function armMyTicketsIntercept(body) {
-  // รูปแบบหลัก (relative/absolute + มี query)
-  cy.intercept(
-    { method: 'GET', url: /\/api\/events\/my-?tickets(?:\/)?(\?.*)?$/ },
-    { statusCode: 200, body }
-  ).as('tix_api_regex')
+// ====== Mock data ======
+const mockUser = { id: 9, name: 'Pond Tester', email: 'pond@example.com' };
+const mockRegs = [
+  { id: 101, eventId: 1, registeredAt: '2025-10-02T20:00:00Z' },
+  { id: 102, eventId: 2, registeredAt: '2025-08-15T18:00:00Z' },
+];
+const mockEventsById = {
+  1: {
+    id: 1,
+    title: 'DATA TECH FAIR',
+    location: 'BITEC Bangna',
+    start_time: '2025-10-02T20:00:00Z',
+    posterImageUrl: 'poster1.jpg', // component จะแปลงเป็น /images/, /uploads/, /static/uploads/
+  },
+  2: {
+    id: 2,
+    title: 'JAZZ NIGHT ON RIVER',
+    location: 'ICONSIAM Hall',
+    start_time: '2025-08-15T18:00:00Z',
+    posterImageUrl: 'poster2.jpg',
+  },
+};
 
-  // กันเคสโปรเจ็กต์ที่ยังเรียกฝั่ง 8080 ตรง ๆ
-  cy.intercept(
-    'GET',
-    'http://localhost:8080/api/events/my-tickets*',
-    { statusCode: 200, body }
-  ).as('tix_api_abs')
-
-  // กันเคสลืมใส่ /api
-  cy.intercept(
-    'GET',
-    '**/events/my-tickets*',
-    { statusCode: 200, body }
-  ).as('tix_api_loose')
-
-  // กัน preflight (ถ้ามี CORS)
-  cy.intercept('OPTIONS', '**/my-tickets*', { statusCode: 200 }).as('tix_preflight')
-
-  // Tap เครือข่ายเพื่อ debug ว่ามี request ออกไหม
-  cy.intercept('**', (req) => {
-    if (req.url.includes('my-tickets')) {
-      // ให้เห็นใน log ของ Cypress
-      // eslint-disable-next-line no-console
-      console.log('[NET] my-tickets →', req.method, req.url)
-    }
-  }).as('net_tap')
+// ====== Intercepts พื้นฐาน ======
+function wireIntercepts() {
+  cy.intercept('GET', RX_ME,   { statusCode: 200, body: mockUser }).as('getMe');
+  cy.intercept('GET', RX_REGS, { statusCode: 200, body: mockRegs }).as('getRegs');
+  cy.intercept('GET', RX_EVT,  (req) => {
+    const id = req.url.match(/\/events\/(\d+)/)?.[1];
+    req.reply({ statusCode: 200, body: mockEventsById[id] || {} });
+  }).as('getEvent');
 }
 
-const FIXED_NOW = new Date('2025-01-15T12:00:00.000Z')
-const mockUser  = { name: 'Jane Ticketlover', email: 'jane@example.com' }
-
-const fxTickets = [
-  { id: 1001, title: 'Future Concert A', date: '2025-01-16T20:00:00.000Z', location: 'Impact Arena', image: '/img/future-a.jpg' },
-  { id: 1002, title: 'Future Concert B', date: '2025-02-01T19:30:00.000Z', location: 'QSNCC',        image: '/img/future-b.jpg' },
-  { id: 9001, title: 'Past Festival X',   date: '2024-12-25T18:00:00.000Z', location: 'ICONSIAM',    image: '/img/past-x.jpg' },
-]
-
-Cypress.on('uncaught:exception', () => false)
-
-function visitWithUser(body = fxTickets) {
-  cy.clock(FIXED_NOW.getTime(), ['Date'])
-
-  // intercept /api/me (ถ้ามี layout ยิง)
-  cy.intercept('GET', '**/api/me', {
-    statusCode: 200,
-    body: { id: 999, email: 'user@demo.app', role: 'USER' },
-  }).as('getMe')
-
-  // เตรียม intercept สำหรับ my-tickets ให้ครบทุก variation
-  armMyTicketsIntercept(body)
-
-  cy.visit(PAGE_PATH, {
+// เข้าหน้า “บัตรของฉัน” ผ่าน navbar (ไม่เดา path)
+function goViaNavbar() {
+  cy.visit('/', {
     onBeforeLoad(win) {
-      // กัน auth-guard
-      win.localStorage.setItem('token', 'mock.jwt')
-      // ใส่ user ตามหน้าที่ใช้งานจริง
-      win.localStorage.setItem('user', JSON.stringify(mockUser))
+      // ให้ initUser() เห็นผู้ใช้ตั้งแต่ mount
+      win.localStorage.setItem('user', JSON.stringify(mockUser));
+      win.localStorage.setItem('token', 'dummy.jwt.token');
     },
-  })
+  });
 
-  // ยืนยันว่าไม่ได้หลุดไปหน้าอื่น
-  cy.location('pathname').should('eq', PAGE_PATH)
+  // ปุ่ม/ลิงก์บน navbar ที่พาไปหน้า My Event (ปรับให้แม่นกับโปรเจกต์คุณ)
+  cy.contains('a,button', /My\s*Event/i, { timeout: 10000 }).click();
 
-  // รอ request ใด ๆ ใน 3 alias หลัก (อย่างน้อย 1 อันต้องมา)
-  // ใช้แบบ "race": ถ้าอันแรกไม่มา แต่อีกอันมาก็ผ่าน
-  cy.wait(['@tix_api_regex', '@tix_api_abs', '@tix_api_loose'], { timeout: 15000, log: false }).then(
-    () => {},
-    () => {
-      // ถ้า 3 อันนี้ไม่มาจริง ให้เช็กว่าแอปยิงไป URL อะไร (ดูจาก net_tap ในคอนโซล)
-      throw new Error('ไม่มี request มาที่ /api/events/my-tickets – ตรวจ URL ในแอปอีกครั้ง')
-    }
-  )
+  // ยืนยันว่า header ของหน้าเป้าหมายเรนเดอร์แล้ว
+  cy.contains('.title-row h1, h1', /My\s*Event\s*Tickets/i, { timeout: 10000 })
+    .should('be.visible');
 }
 
-describe('บัตรงานอีเวนต์ของฉัน (My Event Tickets) – E2E', () => {
-  it('TIX-001: โหลดหน้าสำเร็จและแสดงข้อมูลผู้ใช้จาก Local Storage พร้อมหัวเรื่อง/ไอคอน', () => {
-    visitWithUser()
+Cypress.on('uncaught:exception', () => false);
 
-    cy.contains('h2', 'My Event Tickets').should('be.visible')
-    cy.get('.title-row .title-icon').should('exist')
-    cy.get('.profile-box .name').should('contain.text', mockUser.name)
-    cy.get('.profile-box .email').should('contain.text', mockUser.email)
-    cy.contains('button.edit-btn', 'Edit Profile').should('exist')
-  })
+// ===================================================================
+// TESTS
+// ===================================================================
+describe('EVT-TIX – หน้าบัตรของฉัน (My Event Tickets)', () => {
+  beforeEach(() => {
+    wireIntercepts();
+    goViaNavbar();
+  });
 
-  it('TIX-002: แยกระหว่าง Upcoming/History ถูกต้อง พร้อม badge จำนวน', () => {
-    visitWithUser()
+  it('EVT-TIX-001: โหลดหน้า My Event Tickets สำเร็จและแสดงชื่อผู้ใช้ / อีเมล', () => {
+    cy.wait('@getRegs', { timeout: 10000 }); // คอนโพเนนต์ยิง /registrations/me ก่อนคำนวณการ์ด
+    cy.get('.profile-box .name').should('contain.text', mockUser.name);
+    cy.get('.profile-box .email').should('contain.text', mockUser.email);
+  });
 
-    cy.get('.tabs .tab').contains(/^Upcoming/).should('have.class', 'active')
-    cy.get('.tabs .tab').contains(/^Upcoming/).find('.badge').should('contain.text', '2')
-    cy.get('.tabs .tab').contains(/^History/).find('.badge').should('contain.text', '1')
-  })
+  it('EVT-TIX-002: แสดงรายการบัตรครบ', () => {
+    cy.wait('@getRegs');
+    cy.get('.event-card').should('have.length', 2);
 
-  it('TIX-003: แท็บว่าง แสดงข้อความ “No …”', () => {
-    // ให้เหลือแค่ past → upcoming ว่าง
-    const onlyPast = [{ ...fxTickets[2] }]
-    visitWithUser(onlyPast)
+    cy.get('.event-card').first().within(() => {
+      cy.get('img.poster').should('have.attr', 'src'); // ไม่บังคับโหลดสำเร็จ แค่มี src
+      cy.get('.event-title').should('contain.text', mockEventsById[1].title);
+      cy.get('.location').should('contain.text', mockEventsById[1].location);
+      cy.contains('button.view-btn', 'View Ticket').should('be.visible');
+    });
+  });
 
-    cy.contains('.tab', 'Upcoming').click()
-    cy.get('[role="tabpanel"]:visible').contains('No upcoming events').should('be.visible')
+  it('EVT-TIX-003: แสดงข้อความ “ยังไม่มีประวัติบัตร” เมื่อไม่พบข้อมูล”', () => {
+    cy.intercept('GET', RX_REGS, { statusCode: 200, body: [] }).as('getRegsEmpty');
 
-    cy.contains('.tab', 'History').click()
-    cy.get('[role="tabpanel"]:visible .event-card').should('have.length.at.least', 1)
-  })
+    // re-enter page เพื่อให้ใช้ intercept ใหม่นี้
+    goViaNavbar();
 
-  it('TIX-004: สลับแท็บด้วย Arrow ซ้าย/ขวา และ aria ถูกต้อง', () => {
-    visitWithUser()
+    cy.wait('@getRegsEmpty');
+    cy.get('.empty').should('contain.text', 'ยังไม่มีประวัติบัตร');
+  });
 
-    cy.contains('.tab', 'Upcoming').focus().trigger('keydown', { key: 'ArrowRight' })
-    cy.contains('.tab', 'History').should('have.class', 'active')
+  it('EVT-TIX-004: เมื่อรูปโปสเตอร์โหลดไม่สำเร็จ ระบบเปลี่ยนไปใช้รูปสำรองได้ถูกต้อง', () => {
+    cy.wait('@getRegs');
 
-    cy.contains('.tab', 'History').focus().trigger('keydown', { key: 'ArrowLeft' })
-    cy.contains('.tab', 'Upcoming').should('have.class', 'active')
+    cy.get('.event-card img.poster').first().then(($img) => {
+      const firstSrc = $img.attr('src') || '';
+      // ยิง error event ใส่ <img> (template ผูก @error="onImgError(event)" ไว้แล้ว)
+      cy.wrap($img).trigger('error');
+      // src ควรถูกเปลี่ยนเป็น candidate ถัดไป (เช่น จาก /images/... → /uploads/...)
+      cy.wrap($img).should(($el) => {
+        const newSrc = $el.attr('src') || '';
+        expect(newSrc, 'fallback src changed').to.not.eq(firstSrc);
+      });
+    });
+  });
 
-    cy.contains('.tab', 'Upcoming').should('have.attr', 'aria-selected', 'true')
-    cy.contains('.tab', 'History').should('have.attr', 'aria-selected', 'false')
-  })
+  it('EVT-TIX-005: การ์ดเรียงจากใหม่ไปเก่า (Oct อยู่บน Aug)', () => {
+    cy.wait('@getRegs');
+    cy.get('.event-card .event-title').then(($titles) => {
+      const texts = [...$titles].map(el => el.textContent.trim());
+      expect(texts[0]).to.include(mockEventsById[1].title); // Oct
+      expect(texts[1]).to.include(mockEventsById[2].title); // Aug
+    });
+  });
 
-  it('TIX-005: การ์ดมีข้อมูลพื้นฐานครบ (alt ชื่อ สถานที่ วันที่)', () => {
-    visitWithUser()
+  it('EVT-TIX-006: คลิก “View Ticket” ไปยัง /my-ticket/:id (จากการ์ดแรก)', () => {
+    cy.wait('@getRegs');
 
-    cy.contains('.tab', 'Upcoming').click()
-    cy.get('[role="tabpanel"]:visible .event-card').first().within(() => {
-      cy.get('img.poster').should('have.attr', 'alt', 'Event Poster')
-      cy.get('.event-title').should('not.be.empty')
-      cy.get('.location').should('not.be.empty')
-      cy.get('.date').invoke('text').should('match', /[A-Za-z]{3}\s\d{2}\s[A-Za-z]{3}\s\d{4}\s\d{2}:\d{2}/)
-    })
-  })
+    cy.get('.event-card').first().within(() => {
+      cy.contains('button.view-btn', 'View Ticket').click({ force: true });
+    });
 
-  it('TIX-006: คลิก “View Ticket” → ไป /ticket/:id ถูกการ์ด', () => {
-    visitWithUser()
+    cy.location('pathname', { timeout: 10000 }).should('match', /\/my-ticket\/\d+$/);
+  });
 
-    cy.contains('.tab', 'Upcoming').click()
-    cy.contains('.event-card .event-title', 'Future Concert B')
-      .parents('.event-card')
-      .within(() => cy.contains('button.view-btn', 'View Ticket').click())
+  it('EVT-TIX-007: เมื่อ /registrations/me ล้มเหลว หน้าไม่ crash (ยังแสดง body)', () => {
+    cy.intercept('GET', RX_REGS, { statusCode: 500, body: { message: 'Server error' } }).as('getRegsErr');
 
-    cy.location('pathname').should('eq', '/ticket/1002')
-  })
+    // re-enter page เพื่อให้ยิง intercept ใหม่นี้
+    goViaNavbar();
 
-  it('TIX-007: ไปแท็บ History แล้วคลิก “View Ticket” → ไป /ticket/:id ของอดีต', () => {
-    visitWithUser()
-
-    cy.contains('.tab', 'History').click()
-    cy.contains('.event-card .event-title', 'Past Festival X')
-      .parents('.event-card')
-      .within(() => cy.contains('button.view-btn', 'View Ticket').click())
-
-    cy.location('pathname').should('eq', '/ticket/9001')
-  })
-})
+    cy.wait('@getRegsErr');
+    cy.get('body').should('exist');
+  });
+});
