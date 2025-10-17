@@ -99,6 +99,7 @@ const filteredRows = computed(() =>
   rows.value
     .filter(r => (!onlyActive.value || r.active))
     .filter(r => (q.value ? (r.name + " " + r.sub).toLowerCase().includes(q.value.toLowerCase()) : true))
+    .slice(0, 3) // ✅ แสดงแค่ 3 อันแรก
 );
 
 /* ====== helpers ====== */
