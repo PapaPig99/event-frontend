@@ -402,7 +402,7 @@ function clearSeat() {
 
           <div class="gallery two-col">
             <!-- รูปภาพเพิ่มเติม -->
-            <div class="gallery-item">
+            <!-- <div class="gallery-item">
               <label class="uplabel">รูปภาพเพิ่มเติม</label>
                <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
                 aria-label="ลบรูปโปสเตอร์">✕</button>
@@ -415,7 +415,7 @@ function clearSeat() {
                   อัปโหลดรูปภาพ
                 </div>
               </div>
-            </div>
+            </div> -->
 
             <!-- ผังงาน/ผังที่นั่ง -->
             <div class="gallery-item">

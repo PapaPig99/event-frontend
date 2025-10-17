@@ -80,7 +80,6 @@ function hideImg(e) {
   border: 1px solid #e5e5e5;
   border-radius: 0;
   box-shadow: none;
-
   background: #fff;
 }
 
@@ -104,17 +103,38 @@ function hideImg(e) {
 .icon.danger:hover{ background:#fdecea; color:#d93025; }
 
 /* รูปโปสเตอร์ */
-.poster-wrap{ padding: 12px; }
-.poster{
-  width:100%;
-  display:block;
-  border-radius: 0;    
+.poster-wrap {
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
+
+.poster {
+  width: 100%;
+  height: 380px;        
+  object-fit: cover;    
+  border-radius: 6px;
+  display: block;
+  background: #f5f5f5;
+}
+
 
 .poster.placeholder{
   height:220px;
   display:flex; align-items:center; justify-content:center;
-  color:#9aa0a6; background:#f5f5f5; border-radius:0; /* 👉 มุมเหลี่ยม */
+  color:#9aa0a6; background:#f5f5f5; border-radius:0; 
+}
+
+@media (max-width: 900px) {
+  .poster {
+    height: 300px;
+  }
+}
+@media (max-width: 600px) {
+  .poster {
+    height: 240px;
+  }
 }
 
 </style>
