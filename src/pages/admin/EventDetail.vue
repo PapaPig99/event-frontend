@@ -226,6 +226,7 @@ import { useRoute } from "vue-router";
 import api from "@/lib/api";
 const route = useRoute();
 
+
 /* ================== STATE ================== */
 const event = reactive({
   id: null,
