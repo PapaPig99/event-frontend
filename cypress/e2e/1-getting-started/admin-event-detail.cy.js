@@ -1,154 +1,207 @@
 /// <reference types="cypress" />
 
-// ========== 1) ป้องกัน Error จาก Vue runtime ==========
-Cypress.on('uncaught:exception', () => false);
+/**
+ * ทดสอบหน้า Event details
+ * รองรับทั้ง /api/events/:id และ /api/events/:id/view
+ * mock availability / attendees ครบ
+ */
 
-// ========== 2) ข้อมูลจำลอง ==========
-const buildEvent = () => ({
+const baseEvent = {
   id: 1,
-  title: "MAJOR CONCERT 2025",
-  category: "คอนเสิร์ต",
-  posterImageUrl: "https://picsum.photos/seed/poster/600/900",
-  seatmapImageUrl: "https://picsum.photos/seed/seat/800/400",
-  location: "Impact Arena, Muang Thong Thani",
-  description: "<p>คอนเสิร์ตใหญ่ประจำปี</p><ul><li>แขกรับเชิญพิเศษ</li></ul>",
-  sessions: [
-    { id: 1, name: "ศุกร์ 7 พ.ย. 2025 • 19:00", startTime: "19:00" },
-    { id: 2, name: "เสาร์ 8 พ.ย. 2025 • 18:00", startTime: "18:00" },
-  ],
-  startDate: "2025-11-07",
-  endDate: "2025-11-08",
-  saleStartAt: "2025-10-25T10:00",
-  saleEndAt: "2025-11-06T23:59",
+  title: 'MARIAH CAREY The Celebration of Mimi',
+  category: 'concert',
+  posterImageUrl: '/images/poster.jpg',
+  detailImageUrl: null,
+  seatmapImageUrl: '/images/seatmap.jpg',
+  location: 'Impact Arena',
+  description: '<p>Only one night!</p>',
+  startDate: '2025-10-28',
+  endDate: '2025-10-29',
+  saleStartAt: '2025-10-19T10:00:00',
+  saleEndAt: '2025-10-25T18:00:00',
   saleUntilSoldout: false,
-  doorOpenTime: "17:00",
-  saleStatus: "OPEN",
-  prices: [{ price: 4500 }, { price: 3500 }, { price: 2000 }],
-});
+  doorOpenTime: '17:00',
+  saleStatus: 'OPEN',
+  prices: [{ price: 5500 }, { price: 3500 }, { price: 1500 }],
+  sessions: [
+    { id: 1, name: 'Day 1', startTime: '18:00:00' },
+    { id: 2, name: 'Day 2', startTime: '19:30:00' },
+  ],
+  zones: [
+    { id: 201, name: 'Zone A', capacity: 100, price: 5500 },
+    { id: 202, name: 'Zone B', capacity: 200, price: 3500 },
+  ],
+};
 
-const zonesBySid = (sid) =>
-  sid === 1
-    ? [
-        { zoneId: 1, zoneName: "VIP A", capacity: 100, available: 7 },
-        { zoneId: 2, zoneName: "VIP B", capacity: 120, available: 15 },
-      ]
-    : [
-        { zoneId: 1, zoneName: "VIP A", capacity: 100, available: 0 },
-        { zoneId: 2, zoneName: "Standard", capacity: 300, available: 220 },
-      ];
+// === Helper intercepts ===
+function interceptView(overrides = {}) {
+  const body = { ...baseEvent, ...overrides };
 
-const attendeesBySid = (sid) => [
-  {
-    id: `${sid}-a1`,
-    user: { name: "Alice", email: "alice@example.com", phone: "0812345678" },
-    zoneId: 1,
-    quantity: 2,
-    registrationStatus: "CONFIRMED",
-    paymentStatus: "PAID",
-    registeredAt: "2025-10-26T09:30:00",
-    paymentReference: "QR-001-ABC",
-  },
-];
-
-// ========== 3) Stub Network ==========
-function stubNetwork() {
-  cy.intercept('GET', '**/api/**/me*', { statusCode: 200, body: { username: 'guest' } }).as('getMe');
-
-  // ✅ รองรับทั้ง /api/events (list) และ /api/events/1/view
-  cy.intercept('GET', '**/api/events', { statusCode: 200, body: [buildEvent()] }).as('getEventsList');
-  cy.intercept('GET', '**/api/events/1**', { statusCode: 200, body: buildEvent() }).as('getEvent');
-
-  cy.intercept('GET', '**/api/zones/session/**/availability', (req) => {
-    const sid = +req.url.match(/session\/(\d+)/)[1];
-    req.reply({ statusCode: 200, body: zonesBySid(sid) });
-  }).as('getZones');
-
-  cy.intercept('GET', '**/api/registrations/event/**', (req) => {
-    const sid = +req.url.match(/event\/\d+\/(\d+)/)[1];
-    req.reply({ statusCode: 200, body: attendeesBySid(sid) });
-  }).as('getAttendees');
+  // intercept ทั้ง /view และปกติ
+  cy.intercept('GET', '**/api/events/*/view', { statusCode: 200, body });
+  cy.intercept('GET', '**/api/events/*', { statusCode: 200, body }).as('getEventView');
 }
 
-// ========== 4) Mount EventDetail โดยไม่แตะซอร์ส ==========
-function mountEventDetailDirect() {
-  cy.visit('/'); // ✅ ใช้ origin จริงจาก Vite
-
-  cy.window().then((win) => {
-    const doc = win.document;
-    const mount = doc.createElement('div');
-    mount.id = 'cy-mount';
-    doc.body.appendChild(mount);
-
-    const script = doc.createElement('script');
-    script.type = 'module';
-    script.text = `
-      import { createApp, h } from '/node_modules/vue/dist/vue.esm-bundler.js';
-      import { createRouter, createWebHashHistory, RouterView } from '/node_modules/vue-router/dist/vue-router.esm-bundler.js';
-      import EventDetail from '/src/pages/admin/EventDetail.vue';
-
-      const routes = [{ path: '/event/:id', component: EventDetail }];
-      const router = createRouter({ history: createWebHashHistory(), routes });
-
-      const Root = { render: () => h(RouterView) };
-      const app = createApp(Root);
-      app.use(router);
-
-      router.push('/event/1');
-      router.isReady().then(() => app.mount('#cy-mount'));
-    `;
-    doc.body.appendChild(script);
-  });
-
-  // ✅ อนุโลมทั้ง getEventsList และ getEvent
-  cy.wait(['@getEventsList', '@getEvent'], { timeout: 20000 }).then(() => {
-    cy.get('.event-detail-page', { timeout: 20000 }).should('exist');
-  });
+function interceptZonesWildcard(defaultBody = []) {
+  cy.intercept('GET', '**/api/zones/session/*/availability', {
+    statusCode: 200,
+    body: defaultBody,
+  }).as('getZonesAny');
 }
 
-// ========== 5) Test Cases ==========
-describe('Admin Event Detail Page (E2E)', () => {
+function interceptAttendees(eventId, sessionId, attendees = []) {
+  cy.intercept(
+    'GET',
+    `**/registrations/event/${eventId}/${sessionId}`,
+    { statusCode: 200, body: attendees }
+  ).as(`getAttendees-${sessionId}`);
+}
+
+// === MAIN TEST ===
+describe('Event details page', () => {
   beforeEach(() => {
-    stubNetwork();
+    cy.clearCookies();
+    cy.clearLocalStorage();
+
+    // ต้อง intercept ก่อน visit เสมอ
+    interceptView();
+    interceptZonesWildcard([]); // กันหน้า fetch zone เองตั้งแต่ mount
+
+    cy.visit('/event/1');
+    cy.wait('@getEventView'); // คราวนี้จะชนแน่นอน
   });
 
-  it('แสดงข้อมูลพื้นฐานของอีเวนต์', () => {
-    mountEventDetailDirect();
+  it('DET-001: โหลดข้อมูลแล้วแสดง Title, Venue, Sessions, Sale period ถูกต้อง', () => {
+    cy.get('.event-name').should('contain', baseEvent.title);
+    cy.get('.place').should('contain', baseEvent.location);
 
-    cy.get('.category').should('contain.text', 'คอนเสิร์ต');
-    cy.get('h1.event-name').should('contain.text', 'MAJOR CONCERT 2025');
-    cy.contains('.info-item .label', 'สถานที่งาน')
+    const expectedShow = baseEvent.sessions.map(s => s.name).join(' / ');
+    cy.contains('.info-item .label', 'วันที่เริ่มงาน')
       .parent()
-      .should('contain.text', 'Impact Arena');
-    cy.contains('.info-item .label', 'ราคาบัตร')
+      .find('.value')
+      .should('contain', expectedShow);
+
+    cy.contains('.info-item .label', 'วันเปิดจำหน่าย')
       .parent()
-      .invoke('text')
-      .should((t) => expect(t).to.match(/4,500/));
+      .find('.value')
+      .should('contain', 'ถึง');
   });
 
-  it('กดเวลารอบ แล้วแสดงโซนคงเหลือได้', () => {
-    mountEventDetailDirect();
+  it('DET-002: แสดงราคาเรียงจากมากไปน้อยและคั่นด้วย " / "', () => {
+    interceptView({ prices: [{ price: 1000 }, { price: 5000 }, { price: 2500 }] });
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+
+    const prices = [5000, 2500, 1000].map(n => n.toLocaleString());
+    cy.get('.price-line').should('contain', prices.join(' / '));
+  });
+
+  it('DET-003: Ticket Status แสดงข้อความและ class ถูกต้อง (UPCOMING/OPEN/CLOSED)', () => {
+    interceptView({ saleStatus: 'UPCOMING' });
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+    cy.get('.status-pill').should('have.class', 'soon').and('contain', 'เร็ว ๆ นี้');
+
+    interceptView({ saleStatus: 'OPEN' });
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+    cy.get('.status-pill').should('have.class', 'open').and('contain', 'เปิดให้ซื้อตั๋วแล้ว');
+
+    interceptView({ saleStatus: 'CLOSED' });
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+    cy.get('.status-pill').should('have.class', 'closed').and('contain', 'ปิดการขายแล้ว');
+  });
+
+  it('DET-004: กดปุ่มเวลาเพื่อดู "โซนคงเหลือ" แล้วโหลด availability มาแสดง', () => {
+    interceptView();
+    interceptZonesWildcard([]);
+    cy.intercept('GET', '**/api/zones/session/1/availability', {
+      statusCode: 200,
+      body: [
+        { zoneId: 201, zoneName: 'Zone A', capacity: 100, available: 40 },
+        { zoneId: 202, zoneName: 'Zone B', capacity: 200, available: 5 },
+        { zoneId: 203, zoneName: 'Zone C', capacity: 150, available: 0 },
+      ],
+    }).as('getZones-1');
+
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
 
     cy.get('.session-block').first().within(() => {
       cy.get('.time-pill').click();
     });
-    cy.wait('@getZones');
-    cy.get('.inline-panel .zone-table').should('be.visible');
+    cy.wait('@getZones-1');
+
+    cy.get('.inline-panel .z-row').should('have.length', 3);
+    cy.contains('.z-row', 'Zone A').find('.z-qty').should('have.class', 'ok').and('contain', '40');
+    cy.contains('.z-row', 'Zone B').find('.z-qty').should('have.class', 'low').and('contain', '5');
+    cy.contains('.z-row', 'Zone C').find('.z-qty').should('have.class', 'soldout').and('contain', '0');
   });
 
-  it('กดรายชื่อผู้เข้าร่วม แล้วแสดงตารางได้', () => {
-    mountEventDetailDirect();
+  it('DET-005: กด "รายชื่อผู้เข้าร่วม" แล้วดึงรายการมาแสดง', () => {
+    interceptView();
+    interceptZonesWildcard([]);
+    interceptAttendees(1, 1, [
+      {
+        id: 'R-01',
+        user: { name: 'Alice', email: 'alice@example.com', phone: '0811111111' },
+        zoneId: 201,
+        quantity: 2,
+        registrationStatus: 'CONFIRMED',
+        paymentStatus: 'PAID',
+        registeredAt: '2025-10-20T12:34:00',
+        paymentReference: 'PAY-AAA',
+      },
+      {
+        id: 'R-02',
+        user: { name: 'Bob', email: 'bob@example.com', phone: '0822222222' },
+        zoneId: 202,
+        quantity: 1,
+        registrationStatus: 'HOLD',
+        paymentStatus: 'UNPAID',
+        registeredAt: '2025-10-20T13:00:00',
+        paymentReference: 'PAY-BBB',
+      },
+    ]);
 
-    cy.get('.session-block').eq(1).within(() => {
-      cy.contains('button', 'รายชื่อผู้เข้าร่วม').click();
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+
+    cy.get('.session-block').first().within(() => {
+      cy.contains('button.btn.attendee', 'รายชื่อผู้เข้าร่วม').click();
     });
-    cy.wait('@getAttendees');
-    cy.get('.attendees-table').should('be.visible');
+    cy.wait('@getAttendees-1');
+
+    cy.get('.attendees-table .t-row').should('have.length', 2);
+    cy.contains('.t-row', 'Alice').within(() => {
+      cy.get('.status-chip').eq(0).should('have.class', 'ok');
+      cy.get('.status-chip').eq(1).should('have.class', 'ok');
+    });
+    cy.contains('.t-row', 'Bob').within(() => {
+      cy.get('.status-chip').eq(0).should('have.class', 'warn');
+      cy.get('.status-chip').eq(1).should('have.class', 'bad');
+    });
   });
 
-  it('แสดงรายละเอียด description HTML ได้', () => {
-    mountEventDetailDirect();
+  it('DET-006: แสดงข้อความ error เมื่อโหลด availability/attendees ล้มเหลว', () => {
+    interceptView();
+    cy.intercept('GET', '**/api/zones/session/1/availability', { statusCode: 500 }).as('zonesFail');
+    cy.intercept('GET', '**/registrations/event/1/1', { statusCode: 500, body: { message: 'boom' } }).as('attFail');
 
-    cy.get('.detail-body').should('exist').and('not.have.class', 'plain');
-    cy.get('.detail-body').contains('คอนเสิร์ตใหญ่ประจำปี').should('be.visible');
+    cy.visit('/event/1');
+    cy.wait('@getEventView');
+
+    cy.get('.session-block').first().within(() => {
+      cy.get('.time-pill').click();
+    });
+    cy.wait('@zonesFail');
+    cy.get('.inline-panel .panel-head small').should('contain', 'โหลดข้อมูลโซนไม่สำเร็จ');
+
+    cy.get('.session-block').first().within(() => {
+      cy.contains('button.btn.attendee', 'รายชื่อผู้เข้าร่วม').click();
+    });
+    cy.wait('@attFail');
+    cy.get('.inline-panel .panel-head .error').should('exist');
   });
 });
