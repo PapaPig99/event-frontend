@@ -24,6 +24,37 @@ const event = ref({
   saleUntilSoldout: false,  // true/false
 })
 
+// ================== SOLD OUT STATE ==================
+const soldOut = ref(new Set())          // เก็บ sessionId ที่บัตรหมด
+const showSoldOut = ref(false)          // เปิด/ปิด overlay
+const soldOutMsg = ref('บัตรหมดแน้ว 🥲')
+
+function isSoldOut(sessionId){
+  return soldOut.value.has(Number(sessionId))
+}
+async function prefetchAvailability(){
+  if (!Array.isArray(sessions.value) || !sessions.value.length) return
+  const tasks = sessions.value
+    .filter(s => s?.id)
+    .map(async (s) => {
+      try {
+        const { data } = await api.get(`/zones/session/${s.id}/availability`)
+        const totalAvailable = Array.isArray(data)
+          ? data.reduce((sum, z) => sum + Number(z?.available || 0), 0)
+          : 0
+        if (event.value.saleUntilSoldout && totalAvailable <= 0) {
+          soldOut.value.add(Number(s.id))
+        } else {
+          soldOut.value.delete(Number(s.id))
+        }
+      } catch {
+        // ถ้าเรียกไม่สำเร็จ ไม่ mark sold out เพื่อไม่บล็อกผู้ใช้
+      }
+    })
+  await Promise.allSettled(tasks)
+}
+
+
 const sessions = ref([])
 const sessionsSorted = computed(() => {
   return [...sessions.value].sort((a, b) => {
@@ -85,12 +116,17 @@ onMounted(async () => {
       priceText: buildPriceText(d),
       poster: d.posterImageUrl || d.detailImageUrl || fallbackPoster,
       seatmap: d.seatmapImageUrl || d.detailImageUrl || fallbackSeatmap,
+      startDateRaw: d.startDate ?? null,
+      endDateRaw: d.endDate ?? null,
       saleStartAt: d.saleStartAt ?? null,
       saleEndAt: d.saleEndAt ?? null,
       saleUntilSoldout: !!d.saleUntilSoldout,
     }
     if (Array.isArray(d.sessions) && d.sessions.length) {
       sessions.value = d.sessions
+      // หลังตั้งค่า sessions.value เสร็จแล้ว
+await prefetchAvailability()
+
     } else {
       // 2.2 fallback: ลอง endpoint อื่นๆ ที่พบบ่อย
       const paths = [
@@ -120,6 +156,43 @@ onMounted(async () => {
   }
 })
 
+// ===== Gate: เริ่มขาย / หมดเขตขาย / วันจบงาน =====
+function endOfDay(d) {
+  if (!d) return null
+  const x = new Date(d.getTime())
+  x.setHours(23,59,59,999)
+  return x
+}
+const now = () => new Date()
+const saleStartAtDate = computed(() =>
+  toDateFromThaiBuddhistISO(event.value.saleStartAt)
+)
+const saleEndAtDate = computed(() =>
+  event.value.saleEndAt ? toDateFromThaiBuddhistISO(event.value.saleEndAt) : null
+)
+const eventEndAtDate = computed(() => {
+  // endDateRaw = YYYY-MM-DD (อาจเป็น พ.ศ.) → แปลงเป็น Date แล้วชงปลายวัน
+  const d = toDateFromBuddhistOrIso(event.value.endDateRaw)
+  return endOfDay(d)
+})
+const saleStarted = computed(() => {
+  const s = saleStartAtDate.value
+  // ถ้าไม่ระบุ saleStartAt ถือว่าเริ่มขายแล้ว (เช่นงานฟรี/เปิดทันที)
+  return s ? now() >= s : true
+})
+const saleEnded = computed(() => {
+  const n = now()
+  if (saleEndAtDate.value && n > saleEndAtDate.value) return true
+  if (eventEndAtDate.value && n > eventEndAtDate.value) return true
+  return false
+})
+const canSelectSession = computed(() => {
+  return (
+    saleStarted.value &&
+    !saleEnded.value &&
+    String(event.value?.status || 'OPEN') === 'OPEN'
+  )
+})
 
  const saleStartText = computed(() => {
    if (!event.value.saleStartAt) return '-'
@@ -267,6 +340,35 @@ function goToPayment() {
   router.push({ name: 'payment', params: { id: route.params.id }, state: { order /* ข้อมูลที่เลือก */ } })
 }
 
+
+
+
+
+async function checkAvailabilityAndGo(session){
+  if (!canSelectSession.value) { err.value = 'ปิดจำหน่ายแล้ว'; return }
+
+  const sid = session?.id
+  if (!sid) { err.value = 'ไม่พบรหัสรอบ'; return }
+
+  try {
+    const { data } = await api.get(`/zones/session/${sid}/availability`)
+    const totalAvailable = Array.isArray(data)
+      ? data.reduce((sum, z) => sum + Number(z?.available || 0), 0)
+      : 0
+
+    if (event.value.saleUntilSoldout && totalAvailable <= 0) {
+      soldOut.value.add(Number(sid))
+      showSoldOut.value = true
+      soldOutMsg.value = 'รอบนี้บัตรหมดแน้ว 🥲'
+      return
+    }
+
+    goToConcertPlan(session)
+  } catch {
+    err.value = 'ตรวจสอบจำนวนที่ว่างไม่สำเร็จ'
+  }
+}
+
 </script>
 
 
@@ -393,9 +495,17 @@ function goToPayment() {
             {{ s.name || formatSessionDate(s) }}
           </div>
           <div class="dt-col right">
-            <button class="time-pill" @click="goToConcertPlan(s)">
-              {{ formatSessionTime(s) }}
-            </button>
+            <button
+  class="time-pill"
+  :disabled="!canSelectSession || isSoldOut(s.id)"
+  :aria-disabled="!canSelectSession || isSoldOut(s.id)"
+  :title="!canSelectSession ? 'ปิดจำหน่ายแล้ว' : (isSoldOut(s.id) ? 'บัตรหมดแล้ว' : 'เลือกเวลานี้')"
+  @click="checkAvailabilityAndGo(s)"
+>
+  {{ formatSessionTime(s) }}
+</button>
+
+
          </div>
         </div>
         <div v-else class="dt-row dt-body">
@@ -423,10 +533,48 @@ function goToPayment() {
 </div>
 
   </div>
+
+
+  <!-- SOLD OUT OVERLAY -->
+<div v-if="showSoldOut" class="overlay-backdrop" @click.self="showSoldOut=false">
+  <div class="overlay-card">
+    <button class="overlay-close" @click="showSoldOut=false">×</button>
+    <h3>บัตรหมดแล้ว</h3>
+    <p>{{ soldOutMsg }}</p>
+    <button class="overlay-ok" @click="showSoldOut=false">โอเค เข้าใจแล้ว</button>
+  </div>
+</div>
+
 </template>
 
 <!-- ===== Global minimal reset (กัน Vite บีบ #app) ===== -->
 <style>
+.overlay-backdrop{
+  position:fixed; inset:0; z-index:1100;
+  background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center;
+  padding:24px;
+}
+.overlay-card{
+  background:#fff; color:#111; border-radius:14px; padding:20px;
+  width:min(420px, 92vw); box-shadow:0 20px 60px rgba(0,0,0,.35);
+  text-align:center;
+}
+.overlay-card h3{ margin:0 0 8px; font-size:20px; font-weight:800; }
+.overlay-card p{ margin:0 0 16px; color:#334155; }
+.overlay-ok{
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color:#fff; font-weight:800; border:none; border-radius:999px;
+  padding:10px 18px; cursor:pointer; box-shadow:0 6px 14px rgba(255,106,19,.25);
+}
+.overlay-close{
+  position:absolute; transform:translate(190px, -10px);
+  width:34px; height:34px; border:none; border-radius:50%;
+  background:#111; color:#fff; font-size:20px; cursor:pointer;
+}
+@media (max-width:480px){
+  .overlay-close{ transform:translate(160px, -10px); }
+}
 
 /* ===== Date/Time table inside black stage card ===== */
 .date-table{
@@ -470,6 +618,13 @@ function goToPayment() {
   padding: 10px 18px;
   cursor: pointer;
   box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+}
+.time-pill[disabled],
+.time-pill[aria-disabled="true"]{
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: grayscale(0.25);
 }
 
 /* ไม่มีผัง */
