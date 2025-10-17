@@ -38,9 +38,17 @@
           <p class="date">{{ formatDate(event.date) }}</p>
           <h3 class="event-title">{{ event.title }}</h3>
           <p class="location">{{ event.location }}</p>
-          <button class="view-btn" @click="viewTicket(event.registrationId)">
+          <!-- ✅ แสดงรอบงาน -->
+<p class="round" style="margin: 4px 0 6px; color:#ED3F27; font-weight:700;">
+  {{ event.roundLabel }}
+</p>
+<!-- ✅ แสดงจำนวนที่นั่ง -->
+<p class="qty" style="margin: 0 0 12px; color:#374151;">
+  จำนวนที่นั่ง: <strong>{{ event.quantity }}</strong>
+</p>
+          <!-- <button class="view-btn" @click="viewTicket(event.registrationId)">
             <i class="fa-solid fa-ticket"></i><span>View Ticket</span>
-          </button>
+          </button> -->
         </div>
       </article>
 
@@ -134,6 +142,39 @@ function imageCandidatesFromEvent(ev, eventId) {
 function resolveDate(ev, reg) {
   return ev?.startAt || ev?.start_at || ev?.start_time || ev?.date || reg?.registeredAt || null
 }
+function toTimeLabel(t){ return String(t||'').slice(0,5) }
+function toDateLabel(iso){
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('th-TH', {
+    weekday:'short', day:'2-digit', month:'short', year:'numeric'
+  })
+}
+function makeShowLabel(dateOrIso, timeStr){
+  if (dateOrIso && !timeStr && !isNaN(Date.parse(dateOrIso))) {
+    const d = new Date(dateOrIso)
+    const hh = String(d.getHours()).padStart(2,'0')
+    const mm = String(d.getMinutes()).padStart(2,'0')
+    return `${toDateLabel(d.toISOString())} ${toTimeLabel(`${hh}:${mm}`)}`
+  }
+  return `${toDateLabel(dateOrIso)} ${toTimeLabel(timeStr)}`
+}
+
+/** หาชื่อรอบจาก ev.sessions โดยใช้ reg.sessionId ถ้ามี; fallback ชื่อ/เวลาแรกของอีเวนต์ */
+function resolveRoundLabel(ev, reg){
+  const sessions = Array.isArray(ev?.sessions) ? ev.sessions : []
+  if (sessions.length === 0) return 'รอบ: TBA'
+
+  let s = null
+  if (reg?.sessionId != null) {
+    s = sessions.find(x => String(x.id) === String(reg.sessionId))
+  }
+  if (!s) s = sessions[0]
+
+  const d = ev.startDate || ev.start_date || s.startDate || s.start_date
+  const t = s.startTime || s.start_time
+  const name = s.name || null
+  return `รอบ: ${name || makeShowLabel(d, t)}`
+}
 
 onMounted(async () => {
   try {
@@ -174,6 +215,8 @@ onMounted(async () => {
         title: ev.title || ev.name || `Event #${r.eventId}`,
         date: resolveDate(ev, r),
         location: ev.location || ev.venue?.name || ev.venue || ev.city || 'TBA',
+        quantity: Number(r.quantity ?? 1),
+    roundLabel: resolveRoundLabel(ev, r),
         registrationStatus: r.registrationStatus,
         paymentStatus: r.paymentStatus,
         _imgCandidates: candidates,
@@ -317,8 +360,8 @@ if (cached) {
 .event-card{display:grid;grid-template-columns:120px 1fr;gap:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px;box-shadow:0 1px 0 rgba(0,0,0,.05);}
 .poster{width:120px;height:160px;object-fit:cover;border-radius:10px;border:1px solid #ddd;}
 .event-info .date{font:600 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#525252;margin-bottom:6px;}
-.event-title{font-size:22px;font-weight:900;color:var(--text);margin:2px 0 6px;}
-.location{color:#374151;margin-bottom:12px;}
+.event-title{font-size:18px;font-weight:900;color:var(--text);margin:2px 0 6px;margin-bottom: -10px;}
+.location{color:#374151;margin-bottom:0px;}
 .view-btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer;}
 .view-btn i{font-size:14px;}
 .empty{text-align:center;color:#98a2b3;margin-top:28px;}

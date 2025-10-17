@@ -375,6 +375,46 @@ async function checkAvailabilityAndGo(session){
   }
 }
 
+
+// ===== Ticket Status (แบบเดียวกับไฟล์แรก) =====
+const allSessionsSoldOut = computed(() => {
+  // ใช้ก็ต่อเมื่อเป็นงานที่ขายจนกว่าจะหมดเท่านั้น
+  if (!event.value.saleUntilSoldout) return false
+  const arr = Array.isArray(sessions.value) ? sessions.value : []
+  if (!arr.length) return false
+  // ทุก session หมด (อิงจาก prefetchAvailability ที่ใส่ลง soldOut แล้ว)
+  return arr.every(s => soldOut.value.has(Number(s.id)))
+})
+
+// รวมเงื่อนไขต่าง ๆ เพื่อสรุปสถานะ
+const ticketSaleStatus = computed(() => {
+  if (!saleStarted.value) return 'UPCOMING'
+  if (saleEnded.value) return 'CLOSED'
+  if (allSessionsSoldOut.value) return 'CLOSED'
+  // เพิ่ม safety: ถ้า backend มี field status != OPEN ให้ถือว่าปิด
+  if (String(event.value?.status || 'OPEN') !== 'OPEN') return 'CLOSED'
+  return 'OPEN'
+})
+
+// ข้อความและคลาสสำหรับป้าย
+const tsText = computed(() => {
+  switch (ticketSaleStatus.value) {
+    case 'UPCOMING': return 'เร็ว ๆ นี้'
+    case 'OPEN':     return 'เปิดให้ซื้อตั๋วแล้ว'
+    case 'CLOSED':   return 'ปิดการขายแล้ว'
+    default:         return '-'
+  }
+})
+const tsClass = computed(() => {
+  switch (ticketSaleStatus.value) {
+    case 'UPCOMING': return 'soon'
+    case 'OPEN':     return 'open'
+    case 'CLOSED':   return 'closed'
+    default:         return ''
+  }
+})
+
+
 </script>
 
 
@@ -441,6 +481,16 @@ async function checkAvailabilityAndGo(session){
                   <span>ราคาบัตร</span>
                 </div>
                 <div class="price-text">{{ event.priceText }}</div>
+
+                <!-- NEW: Ticket Status -->
+  <div class="status-line" style="margin: 8px 0 12px;">
+    <span class="label">
+      <i class="fa-solid fa-ticket"></i> Ticket Status
+    </span>
+    <span class="status-pill" :class="tsClass" style="margin-left:8px;">
+      {{ tsText }}
+    </span>
+  </div>
               </div>
             </div>
 
@@ -547,6 +597,21 @@ async function checkAvailabilityAndGo(session){
 
 <!-- ===== Global minimal reset (กัน Vite บีบ #app) ===== -->
 <style>
+/* ===== Ticket Status pill ===== */
+.status-line { display: flex; align-items: center; gap: 8px; }
+.status-pill{
+  display:inline-block;
+  padding:8px 15px;
+  border-radius:20px;
+  font-size:16px;
+  font-weight:800;
+  line-height:1;
+  background-color:#fff;
+  border:2px solid currentColor;
+}
+.status-pill.open   { color:#16a34a; } /* เขียว */
+.status-pill.soon   { color:#ff6a13; } /* ส้ม */
+.status-pill.closed { color:#ef4444; } /* แดง */
 
 /* ===== Date/Time table inside black stage card ===== */
 .date-table{

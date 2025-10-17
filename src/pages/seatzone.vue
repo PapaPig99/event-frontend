@@ -12,32 +12,68 @@ const hasSeatmap = ref(false)
 /* ===== HERO / State ===== */
 const poster = ref('')
 const title  = ref('')
-const shows  = ref([])
-const selectedShow = ref('')
+const shows  = ref([])           // array ของ label รอบการแสดง
+const selectedShow = ref('')     // เก็บเป็น label
 
-/* ===== Sessions mapping (อย่าไปประกาศซ้ำในฟังก์ชันอื่น) ===== */
-const sessionsRaw      = ref([])     // [{id,...}]
+/* ===== Sessions mapping ===== */
+const sessionsRaw      = ref([])     // [{id,name,...}]
 const sessionLabelToId = ref({})     // label -> id
 
 /* ===== Zones ===== */
 const zones = ref([])                // [{id,label,price,remaining,qty}, ...]
 const lastChangedIndex = ref(0)
+const zonePriceById   = ref({})  // { "1": 12000, ... }
+const zonePriceByName = ref({})  // { "zone a ...": 12000, ... }
 
-/* ===== UI Helpers ===== */
-const selectedItems = computed(() =>
-  zones.value.filter(z => z.qty > 0).map(z => ({
-    zoneId: z.id, zoneLabel: z.label, unitPrice: z.price, qty: z.qty
-  }))
-)
-const canProceed  = computed(() => selectedItems.value.length > 0)
-const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
-const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
+async function ensurePriceIndexLoaded(eventId) {
+  // ถ้ามีแล้ว ไม่ต้องโหลดซ้ำ
+  if (Object.keys(zonePriceById.value).length > 0 || Object.keys(zonePriceByName.value).length > 0) return;
+
+  const byId  = {}
+  const byName= {}
+
+  // 2.1 ดึงจาก plan ก่อน (ถ้ามี)
+  const plan = readPlan(eventId)
+  if (Array.isArray(plan?.zones)) {
+    plan.zones.forEach(z => {
+      const id  = String(z.id ?? z.zoneId ?? '')
+      const key = normalizeKey(z.name || z.label || z.code || id)
+      const p   = Number(z.price ?? 0)
+      if (id)  byId[id]   = p
+      if (key) byName[key]= p
+    })
+  }
+
+  // 2.2 ดึงจาก API เสมอเพื่อให้ครบถ้วน
+  try {
+    const { data: ev } = await api.get(`/events/${eventId}`)
+    if (Array.isArray(ev?.zones)) {
+      ev.zones.forEach(z => {
+        const id  = String(z.id ?? '')
+        const key = normalizeKey(z.name || z.label || z.id)
+        const p   = Number(z.price ?? 0)
+        if (id)  byId[id]    = p
+        if (key) byName[key] = p
+      })
+    }
+  } catch (_) {
+    /* เงียบไว้ ใช้เฉพาะที่หาได้ */
+  }
+
+  zonePriceById.value   = byId
+  zonePriceByName.value = byName
+}
+
+
+/* ===== UI Helpers (สรุป) ===== */
+const totalQty    = computed(() => zones.value.reduce((s,z)=> s + Number(z.qty||0), 0))
+const totalAmount = computed(() => zones.value.reduce((s,z)=> s + Number(z.qty||0) * Number(z.price||0), 0))
 const primaryZone = computed(()=> {
-  const picked = zones.value.findIndex(z => z.qty > 0)
-  const idx = (zones.value[lastChangedIndex.value]?.qty ?? 0) > 0
+  const picked = zones.value.findIndex(z => Number(z.qty||0) > 0)
+  const idx = (Number(zones.value[lastChangedIndex.value]?.qty || 0) > 0)
     ? lastChangedIndex.value
     : (picked === -1 ? 0 : picked)
-  return zones.value[idx]
+  return zones.value[idx] || { label: '' }
 })
 function formatTHB(n){ return `${Number(n||0).toLocaleString('en-US')} THB` }
 
@@ -56,7 +92,6 @@ function toDateLabel(iso){
   return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
 }
 function makeShowLabel(dateOrIso, timeStr){
-  // รองรับ name/วันที่/เวลา ตาม backend
   if (dateOrIso && !timeStr && !isNaN(Date.parse(dateOrIso))) {
     const d = new Date(dateOrIso)
     const hh = String(d.getHours()).padStart(2,'0')
@@ -106,7 +141,7 @@ const showAvail = ref(false)
 const loadingAvail = ref(false)
 const availError = ref('')
 const latestAvail = ref([])           // raw list [{ zoneId, zoneName, available }, ...]
-const capacityByZone = ref({})   // { [id or nameKey]: capacity }
+const capacityByZone = ref({})        // { [id or nameKey]: capacity }
 const liveAvailByZone = ref({})       // { [id]: n, [nameKey]: n }
 let availTimer = null
 
@@ -118,12 +153,6 @@ function liveAvailableFor(z) {
   if (Number.isFinite(byName)) return Math.max(0, Number(byName))
   return Math.max(0, Number(z.remaining ?? 0))
 }
-function left(z) {
-  const live = Math.max(0, liveAvailableFor(z))
-  const q    = Math.max(0, Number(z.qty || 0))
-  return Math.max(0, live - q)
-}
-
 function capacityFor(z){
   const byId = capacityByZone.value?.[String(z.id)]
   if (Number.isFinite(byId)) return Math.max(0, Number(byId))
@@ -132,16 +161,20 @@ function capacityFor(z){
   if (Number.isFinite(byName)) return Math.max(0, Number(byName))
   return undefined
 }
+function left(z) {
+  const live = Math.max(0, liveAvailableFor(z))
+  const q    = Math.max(0, Number(z.qty || 0))
+  return Math.max(0, live - q)
+}
 function reconcileQtyWithLive() {
   zones.value.forEach(z => {
-    const live = liveAvailableFor(z)           // จากแผนที่ live
-    const cap  = capacityFor(z)                // ถ้ามี
+    const live = liveAvailableFor(z)
+    const cap  = capacityFor(z)
     const ceiling = cap != null ? Math.min(live, cap) : live
     if (z.qty > ceiling) z.qty = ceiling
     if (z.qty < 0) z.qty = 0
   })
 }
-
 function qtyClass(n){ if (n<=0) return 'zero'; if (n<=10) return 'low'; return 'ok' }
 
 const rowsToShow = computed(() => {
@@ -150,8 +183,6 @@ const rowsToShow = computed(() => {
       const zoneId   = item.zoneId ?? item.id
       const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
       const base     = Math.max(0, Number(item.available ?? item.remaining ?? item.left ?? 0))
-
-      // หักเฉพาะ qty ของ “โซนเดียวกัน”
       let z = zones.value.find(zz => String(zz.id) === String(zoneId))
       if (!z) {
         const key = normalizeKey(zoneName)
@@ -161,31 +192,34 @@ const rowsToShow = computed(() => {
       return { code: zoneName ?? zoneId ?? '-', left: Math.max(0, base - picked) }
     })
   }
-  // fallback ใช้สถานะในหน้า
   return zones.value.map((z,i)=>({ code: z.label || z.name || z.id || `Zone ${i+1}`, left: left(z) }))
 })
 
-/* เติมโซนให้ตรงกับ availability หาก backend ไม่ส่งรายการโซน */
+/* เติมโซนถ้า backend ส่งมาเฉพาะ availability */
 function ensureZonesFromAvailability() {
   const existingKeys = new Set(zones.value.map(z => String(z.id)))
-  const priceByName = {}
-  ;(history.state?.plan?.zones || []).forEach(z => {
-    const key = normalizeKey(z.name || z.label || z.code)
-    if (key) priceByName[key] = Number(z.price ?? 0)
-  })
+
   const toPush = []
   for (const it of latestAvail.value || []) {
     const zoneId   = it.zoneId ?? it.id
     const zoneName = it.zoneName ?? it.zone ?? it.name ?? it.code ?? `Zone`
     const keyName  = normalizeKey(zoneName)
+
     const existsById   = existingKeys.has(String(zoneId))
     const existsByName = zones.value.some(z => normalizeKey(z.label ?? z.name ?? z.id) === keyName)
     if (!existsById && !existsByName) {
+      // ใช้ราคาจาก map ก่อน
+      let price = 0
+      const byId   = zonePriceById.value[String(zoneId)]
+      const byName = zonePriceByName.value[keyName]
+      if (Number.isFinite(byId))      price = byId
+      else if (Number.isFinite(byName)) price = byName
+
       toPush.push({
         id: zoneId ?? `Z${zones.value.length + toPush.length + 1}`,
         label: zoneName,
         desc: '',
-        price: Number.isFinite(priceByName[keyName]) ? priceByName[keyName] : 0,
+        price: Number(price ?? 0),
         remaining: Math.max(0, Number(it.available ?? it.remaining ?? it.left ?? 0)),
         qty: 0
       })
@@ -193,6 +227,7 @@ function ensureZonesFromAvailability() {
   }
   if (toPush.length) zones.value.push(...toPush)
 }
+
 
 /* ===== Fetch availability (ปัจจุบัน) ===== */
 async function getCurrentSessionId() {
@@ -230,17 +265,14 @@ async function loadAvailOnce() {
     const { data } = await api.get(`/zones/session/${sid}/availability`)
     latestAvail.value = Array.isArray(data) ? data : []
 
-    // === rebuild live+capacity map (ทั้ง by id และ by name) ===
+    // build live/capacity map
     const liveMap = {}
     const capMap  = {}
     latestAvail.value.forEach(item => {
       const zoneId   = item.zoneId ?? item.id
       const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
       const capacity = Number(item.capacity ?? item.cap ?? 0)
-      // available บางทีติดลบจาก backend → clamp เป็น 0
-      const availableRaw = Number(item.available ?? item.remaining ?? item.left ?? 0)
-      const available    = Math.max(0, availableRaw)
-
+      const available = Math.max(0, Number(item.available ?? item.remaining ?? item.left ?? 0))
       if (zoneId != null) {
         liveMap[String(zoneId)] = available
         if (Number.isFinite(capacity)) capMap[String(zoneId)] = Math.max(0, capacity)
@@ -254,15 +286,26 @@ async function loadAvailOnce() {
     liveAvailByZone.value = liveMap
     capacityByZone.value  = capMap
 
-    // sync โซนที่มีอยู่ให้สอดคล้องกับ live (และเพดาน capacity ถ้ามี)
+    // sync zones.remaining กับ live/capacity
     zones.value = zones.value.map(z => {
       const live = liveAvailableFor(z)
       const cap  = capacityFor(z)
       const remaining = cap != null ? Math.min(live, cap) : live
-      return { ...z, remaining: remaining }
+      return { ...z, remaining }
     })
     reconcileQtyWithLive()
     ensureZonesFromAvailability()
+    // sync ราคาให้โซนเดิมทุกครั้ง (กันกรณี price=0 จากรอบแรก)
+zones.value = zones.value.map(z => {
+  const idKey  = String(z.id)
+  const nameKey= normalizeKey(z.label ?? z.name ?? z.id)
+  const p =
+    (zonePriceById.value[idKey] != null ? zonePriceById.value[idKey] :
+     zonePriceByName.value[nameKey] != null ? zonePriceByName.value[nameKey] :
+     z.price)
+  return { ...z, price: Number(p ?? 0) }
+})
+
   } catch (err) {
     availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
   } finally {
@@ -270,10 +313,8 @@ async function loadAvailOnce() {
   }
 }
 
-
 async function refreshAvailabilityForSelectedShow() {
   await loadAvailOnce()
-  // sync remaining ตาม live ต่อโซน
   zones.value = zones.value.map(z => ({ ...z, remaining: liveAvailableFor(z) }))
   reconcileQtyWithLive()
 }
@@ -290,192 +331,94 @@ function closeAvail() {
   if (availTimer) { clearInterval(availTimer); availTimer = null }
 }
 
+/* ===== Helpers: ราคา/คงเหลือที่ใช้ใน template ===== */
+function priceOf(z) { return Number(z.price ?? z.unitPrice ?? 0) }
+function leftOf(z)  { return Number(z.remaining ?? z.left ?? z.available ?? 0) }
 
-/* ===== Qty buttons (ลด/เพิ่มเฉพาะโซน) ===== */
-function inc(i) {
-  const z = zones.value[i]
-  if (left(z) > 0) {
-    z.qty = Math.min(z.qty + 1, z.qty + left(z))
-    lastChangedIndex.value = i
+/* ===== Qty buttons (รับเป็นอ็อบเจ็กต์โซน, ให้ตรงกับ template) ===== */
+function inc(z){
+  const l = left(z)
+  z.qty = Number(z.qty || 0)
+  if (l > 0) {
+    z.qty = Math.min(z.qty + 1, z.qty + l)
+    const idx = zones.value.findIndex(zz => zz === z)
+    if (idx >= 0) lastChangedIndex.value = idx
   }
 }
-function dec(i) {
-  const z = zones.value[i]
+function dec(z){
+  z.qty = Number(z.qty || 0)
   if (z.qty > 0) {
-    z.qty--
-    lastChangedIndex.value = i
+    z.qty -= 1
+    const idx = zones.value.findIndex(zz => zz === z)
+    if (idx >= 0) lastChangedIndex.value = idx
   }
 }
 
-
-// ยิงล็อกที่นั่งตามที่เลือกแบบทีละโซน (sequential)
-// - ลอง payload camelCase ก่อน ถ้า error ลอง snake_case อีกรอบ
-// - ถ้าโซนไหน fail จะ throw พร้อมข้อความที่อ่านได้
-async function reserveSelected(sessionId, eventId) {
-  const items = selectedItems.value
-    .filter(it => Number(it.qty) > 0)
-    .map(it => ({
-      eventId: Number(eventId),
-      sessionId: Number(sessionId),
-      zoneId: Number(it.zoneId),
-      quantity: Number(it.qty),
+/* ===== รายการที่เลือกหลายโซน (ใช้ชื่อ selectedDrafts เพื่อไม่ชนของเดิม) ===== */
+const selectedDrafts = computed(() =>
+  zones.value
+    .filter(z => Number(z.qty) > 0)
+    .map(z => ({
+      seatZoneId: Number(z.id),
+      zoneId:     Number(z.id),
+      zoneLabel:  z.label ?? z.name ?? `Zone ${z.id}`,
+      unitPrice:  priceOf(z),
+      quantity:   Number(z.qty)
     }))
+)
+const canProceed = computed(() => selectedDrafts.value.length > 0)
 
-  if (!items.length) throw new Error('ไม่มีรายการโซนที่ต้องล็อก')
+/* ===== ไปหน้า Payment (เซฟ drafts & order) ===== */
+function goToPayment(){
+  if (!canProceed.value) return
 
-  const results = []
+  const eventId = Number(route.params.id)
+  const sessionId = Number(
+    sessionLabelToId.value?.[selectedShow.value] ??
+    selectedShow.value?.id ??
+    selectedShow.value ??
+    route.query.sessionId
+  )
 
-  // OPTIONAL: เผื่ออนาคตมี batch endpoint – ไม่ถือเป็น error ถ้า 404
-  try {
-    const { data } = await api.post('/registrations/batch', { items })
-    if (data && Array.isArray(data.results)) {
-      const failed = data.results.find(r => !r.ok)
-      if (failed) throw new Error(failed.message || 'บางโซนล็อกไม่สำเร็จ')
-      return { mode: 'batch', results: data.results, groupId: data.groupId }
-    }
-  } catch (e) {
-    // 404/405/501 หรือใด ๆ ที่ไม่รองรับ batch → ไปทีละโซนต่อ
-  }
+  // drafts หลายรายการ
+  const drafts = selectedDrafts.value.map(it => ({
+    eventId, sessionId,
+    seatZoneId: it.seatZoneId,
+    zoneId:     it.zoneId,
+    quantity:   it.quantity,
+    unitPrice:  it.unitPrice,
+    zoneLabel:  it.zoneLabel
+  }))
 
-  // ยิงทีละโซน เพื่อเลี่ยง race/409 และดู error แยกแต่ละโซนได้
-  for (const it of items) {
-    // 1) camelCase
-    const camelPayload = {
-      eventId: it.eventId,
-      sessionId: it.sessionId,
-      zoneId: it.zoneId,
-      quantity: it.quantity,
-    }
-
-    try {
-      const { data } = await api.post('/registrations', camelPayload)
-      results.push({ zoneId: it.zoneId, ok: true, reservationId: data?.reservationId || data?.id })
-      continue
-    } catch (err1) {
-      const status = err1?.response?.status
-
-      // ถ้าเป็น 401/403 → ให้ผู้ใช้ไปล็อกอิน
-      if (status === 401 || status === 403) {
-        throw new Error('กรุณาเข้าสู่ระบบก่อนทำรายการ')
-      }
-
-      // 2) snake_case fallback (บาง backend ต้อง snake_case)
-      const snakePayload = {
-        event_id: it.eventId,
-        session_id: it.sessionId,
-        zone_id: it.zoneId,
-        quantity: it.quantity,
-      }
-
-      try {
-        const { data } = await api.post('/registrations', snakePayload)
-        results.push({ zoneId: it.zoneId, ok: true, reservationId: data?.reservationId || data?.id })
-        continue
-      } catch (err2) {
-        // รวมข้อความ error อ่านง่ายขึ้น
-        const status2 = err2?.response?.status
-        const msg =
-          err2?.response?.data?.message ||
-          err2?.response?.data?.error ||
-          err1?.response?.data?.message ||
-          err1?.message ||
-          (status2 === 404 ? 'ไม่พบปลายทาง /registrations' :
-           status2 === 409 ? 'มีการจองชนกัน กรุณาลองใหม่' :
-           status2 === 422 ? 'ข้อมูลไม่ถูกต้อง' :
-           status2 >= 500 ? 'เซิร์ฟเวอร์มีปัญหา' : 'ไม่สามารถล็อกที่นั่งได้')
-
-        // หยุดทั้งกลุ่ม เพราะต้องการ atomic feel: โซนใด fail ให้ผู้ใช้ตัดสินใจใหม่
-        throw new Error(`โซน ${it.zoneId}: ${msg}`)
-      }
-    }
-  }
-
-  return { mode: 'client-only', results: [] }
-}
-
-/* ===== Proceed (validate ต่อโซน + บันทึก order/draft) ===== */
-async function goToPayment() {
-  if (selectedItems.value.length === 0) {
-    alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
-    const zonesEl = document.querySelector('.zones')
-    if (zonesEl) {
-      const y = zonesEl.getBoundingClientRect().top + window.pageYOffset - 80
-      window.scrollTo({ top: y, behavior: 'smooth' })
-    }
-    return
-  }
-
-  // ตรวจความพอรายโซน จาก live availability + capacity
-  for (const it of selectedItems.value) {
-    const z = zones.value.find(zz => String(zz.id) === String(it.zoneId))
-    if (!z) continue
-    const live = Math.max(0, liveAvailableFor(z))
-    const cap  = capacityFor(z)
-    const ceiling = cap != null ? Math.min(live, cap) : live
-    if (it.qty > ceiling) {
-      alert(`โซน "${it.zoneLabel}" เหลือไม่พอแล้ว (เลือก ${it.qty} แต่เหลือ ${ceiling})`)
-      reconcileQtyWithLive()
-      return
-    }
-  }
-
-  const eventId   = Number(route.params.id)
-  const sessionId = await getCurrentSessionId()
-  if (!sessionId) { alert('ไม่พบรอบการแสดง'); return }
-
-  // === order (ไว้โชว์ที่ payment) ===
+  // order summary ให้หน้า Payment
+  const showLabel =
+    (shows.value || []).find(s => String(sessionLabelToId.value?.[s]) === String(sessionId)) ??
+    String(selectedShow.value ?? '')
   const order = {
     eventId,
-    title: title.value,
+    title:  title.value ?? '',
     poster: poster.value || fallbackPoster,
-    show: selectedShow.value,
-    items: selectedItems.value,
-    fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10),
+    show:   showLabel,
+    items:  selectedDrafts.value.map(x => ({ zoneLabel: x.zoneLabel, unitPrice: x.unitPrice, qty: x.quantity })),
+    fee:    0
   }
 
-  // === draft หลายโซน (สำคัญ) ===
-const registrationsDraft = selectedItems.value.map(it => ({
-  eventId: Number(eventId),
-  sessionId: Number(sessionId),
-  // เก็บทั้งคู่ให้แน่ใจว่าหน้า payment ใช้ได้ทุกแบบ
-  zoneId: Number(it.zoneId),
-  seatZoneId: Number(it.zoneId),
-  quantity: Number(it.qty),
-}))
-
-
-router.push({
-  name: 'payment',
-  params: { id: eventId },
-  state: {
-    order,
-    registrationsDraft,
-    registrationDraft: registrationsDraft[0] || null
-  }
-})
-// (แถม) ถ้าคุณเก็บลง sessionStorage ด้วย ให้ใช้ key เดิม แต่ข้อมูลใหม่ที่มี seatZoneId
-sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(registrationsDraft))
-
-  // ✅ ตรงนี้คือที่ error ของคุณ: ต้องประกาศก่อนใช้
-  const fallbackFirst = registrationsDraft[0] || null
-
-  // persist กัน refresh
+  sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(drafts))
+  sessionStorage.setItem(`registrationsDrafts:${eventId}`, JSON.stringify(drafts))
   sessionStorage.setItem(`order:${eventId}`, JSON.stringify(order))
-  sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(registrationsDraft))
-  if (fallbackFirst) {
-    sessionStorage.setItem(`registrationDraft:${eventId}`, JSON.stringify(fallbackFirst))
-  }
 
-  
+  router.push({
+    name: 'payment',
+    params: { id: String(eventId) },
+    state:  { registrationsDraft: drafts, registrationsDrafts: drafts, order }
+  })
 }
-
-
-
 
 /* ===== Initial mount ===== */
 onMounted(async () => {
-  const id = routeId.value
+  const id = Number(routeId.value)
   const plan = readPlan(id)
+  await ensurePriceIndexLoaded(id)
 
   // HERO จาก plan
   if (plan) {
@@ -505,7 +448,7 @@ onMounted(async () => {
 
   if (!poster.value) poster.value = fallbackPoster
 
-  // ถ้า plan ไม่มีอะไรเลย → ดึงจาก API อีเวนต์
+  // ถ้า plan ไม่มีเลย → ดึงจาก API อีเวนต์
   if (!plan?.sessions?.length && !plan?.zones?.length) {
     try {
       const { data: ev } = await api.get(`/events/${id}`)
@@ -546,7 +489,6 @@ onMounted(async () => {
 watch(selectedShow, async () => {
   await refreshAvailabilityForSelectedShow()
 })
-
 </script>
 
 
@@ -647,24 +589,19 @@ watch(selectedShow, async () => {
 
     <!-- ===== รายการโซน ===== -->
    <div class="zones">
-  <div v-for="(z,i) in zones" :key="z.id" class="zone-card">
-    <div class="zone-left">
-      <div class="zone-title">
-        <strong>{{ z.label }}</strong>
-        <span class="muted"> {{ z.desc }}</span>
-      </div>
-      <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
-      <!-- ใช้คงเหลือจริง -->
-      <div class="zone-leftover muted">เหลือ {{ left(z) }} ที่นั่ง</div>
-
-    </div>
-
-    <div class="zone-qty">
-      <button class="qty-btn" :disabled="z.qty === 0" @click="dec(i)">−</button>
-      <div class="qty-num">{{ z.qty }}</div>
-      <button class="qty-btn" :disabled="left(z) === 0" @click="inc(i)">＋</button>
-    </div>
+  <div v-for="z in zones" :key="z.id" class="zone-item">
+  <div class="zone-left">
+    <div class="zone-title">{{ z.label || z.name }}</div>
+    <div class="zone-price">ราคา {{ (priceOf(z) || 0).toLocaleString('en-US') }} THB</div>
+    <div class="zone-remaining">เหลือ {{ leftOf(z) }} ที่นั่ง</div>
   </div>
+
+  <div class="zone-ctl">
+    <button class="btn" @click="dec(z)" :disabled="(z.qty||0) <= 0">-</button>
+    <div class="qty">{{ z.qty || 0 }}</div>
+    <button class="btn" @click="inc(z)" :disabled="(z.qty||0) >= leftOf(z)">+</button>
+  </div>
+</div>
 </div>
 
 
@@ -684,7 +621,7 @@ watch(selectedShow, async () => {
 
   <div class="sum-actions">
     <button class="btn-back" @click="goBack">ย้อนกลับ</button>
-    <button class="btn-pay" :disabled="!canProceed" @click="goToPayment">ชำระเงิน</button>
+<button class="proceed" :disabled="!canProceed" @click="goToPayment">ไปหน้าชำระเงิน</button>
   </div>
 </section>
 
@@ -905,8 +842,8 @@ select{
 
 /* ปุ่มย้อนกลับ (เทา) — ซ้าย */
 .btn-back{
-  background: #20f00dcc;          /* เทาเหมือนภาพตัวอย่าง */
-  color: #fff;
+  background: #838383cc;          /* เทาเหมือนภาพตัวอย่าง */
+  color: #000000;
   border: none;
   padding: 10px 22px;
   border-radius: 999px; 
@@ -937,4 +874,47 @@ select{
   .summary{ flex-direction:column; align-items:flex-start; }
   .sum-right{ width:100%; justify-content:space-between; }
 }
+/* ===== Compatibility: map ชื่อคลาสใหม่ -> ธีมเดิม ===== */
+
+/* กล่องโซน: ให้ .zone-item ดูเหมือน .zone-card เดิม */
+.zone-item{
+  display:flex; justify-content:space-between; align-items:center;
+  background:#e6e6e6;                 /* << สีเทาแบบของเดิม */
+  border-radius:14px; padding:18px 16px;
+  border:1px solid #eee;
+}
+
+/* ฝั่งข้อมูลซ้าย ใช้ฟอนต์/ขนาดเดิม */
+.zone-left{ display:flex; flex-direction:column; gap:8px; }
+.zone-title{ font-size:18px; font-weight:800; color:#111; }
+.zone-price{ font-size:16px; font-weight:800; color:#111; }   /* ราคาให้โทนเดียวกับเดิม */
+.zone-remaining{ font-size:14px; color:#111; }
+
+/* ปุ่ม + - และตัวเลขกลาง: ให้เหมือน .zone-qty / .qty-btn / .qty-num เดิม */
+.zone-ctl{ display:flex; align-items:center; gap:14px; }
+.zone-ctl .btn{
+  width:48px; height:48px;
+  border-radius:10px; border:1px solid #e5e7eb; background:#f3f4f6;
+  font-size:28px; font-weight:800; color:#222; cursor:pointer;
+}
+.zone-ctl .btn:disabled{
+  opacity:.45; cursor:not-allowed; filter:grayscale(30%);
+}
+.zone-ctl .qty{
+  min-width:28px; text-align:center; font-size:28px; font-weight:800;
+}
+
+/* ปุ่มไปชำระเงิน: ให้ .proceed ใช้หน้าตาเดียวกับ .btn-pay เดิม */
+.btn-pay,
+.proceed{
+  background: linear-gradient(90deg, #ff6a13, #ff3d00);
+  color:#fff; border:none; padding:10px 26px; border-radius:999px;
+  font-weight:800; font-size:16px; cursor:pointer;
+  box-shadow:0 6px 14px rgba(255,106,19,.25);
+}
+.btn-pay:disabled,
+.proceed:disabled{
+  opacity:.5; cursor:not-allowed; filter:grayscale(40%);
+}
+
 </style>
