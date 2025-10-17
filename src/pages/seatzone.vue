@@ -1,8 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import api from '@/lib/api'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { watch } from 'vue'
-
 
 /* ===== Router ===== */
 const router = useRouter()
@@ -10,29 +9,84 @@ const route  = useRoute()
 const routeId = computed(() => route.params.id)
 const hasSeatmap = ref(false)
 
+/* ===== HERO / State ===== */
 const poster = ref('')
 const title  = ref('')
 const shows  = ref([])
 const selectedShow = ref('')
 
+/* ===== Sessions mapping (อย่าไปประกาศซ้ำในฟังก์ชันอื่น) ===== */
+const sessionsRaw      = ref([])     // [{id,...}]
+const sessionLabelToId = ref({})     // label -> id
 
-watch(selectedShow, async (newShow) => {
-  // โหลด availability ของรอบใหม่
-  await loadAvailOnce()
+/* ===== Zones ===== */
+const zones = ref([])                // [{id,label,price,remaining,qty}, ...]
+const lastChangedIndex = ref(0)
 
-  // เมื่อโหลดเสร็จ → อัปเดตจำนวนคงเหลือในแต่ละ zone
-  latestAvail.value.forEach(item => {
-    const zoneId = item.zoneId ?? item.id
-    const available = Number(item.available ?? item.remaining ?? item.left ?? 0)
-    const z = zones.value.find(z => String(z.id) === String(zoneId))
-    if (z) {
-      z.remaining = available
-    }
-  })
+/* ===== UI Helpers ===== */
+const selectedItems = computed(() =>
+  zones.value.filter(z => z.qty > 0).map(z => ({
+    zoneId: z.id, zoneLabel: z.label, unitPrice: z.price, qty: z.qty
+  }))
+)
+const canProceed  = computed(() => selectedItems.value.length > 0)
+const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
+const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
+const primaryZone = computed(()=> {
+  const picked = zones.value.findIndex(z => z.qty > 0)
+  const idx = (zones.value[lastChangedIndex.value]?.qty ?? 0) > 0
+    ? lastChangedIndex.value
+    : (picked === -1 ? 0 : picked)
+  return zones.value[idx]
 })
+function formatTHB(n){ return `${Number(n||0).toLocaleString('en-US')} THB` }
 
+/* ===== Assets ===== */
+const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
+const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
 
-// เดิม: const goBack = () => router.back()
+/* ===== Stepper ===== */
+const currentStep = 2
+
+/* ===== Utils ===== */
+function normalizeKey(v){ return String(v ?? '').trim().toLowerCase() }
+function toTimeLabel(t){ return String(t||'').slice(0,5) }
+function toDateLabel(iso){
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
+}
+function makeShowLabel(dateOrIso, timeStr){
+  // รองรับ name/วันที่/เวลา ตาม backend
+  if (dateOrIso && !timeStr && !isNaN(Date.parse(dateOrIso))) {
+    const d = new Date(dateOrIso)
+    const hh = String(d.getHours()).padStart(2,'0')
+    const mm = String(d.getMinutes()).padStart(2,'0')
+    return `${toDateLabel(d.toISOString())} ${toTimeLabel(`${hh}:${mm}`)}`
+  }
+  return `${toDateLabel(dateOrIso)} ${toTimeLabel(timeStr)}`
+}
+
+/* ===== Read state passed from previous pages ===== */
+function readEventLite(id) {
+  const st = history.state?.eventLite
+  if (st && typeof st === 'object') return st
+  try {
+    const raw = sessionStorage.getItem(`eventLite:${id}`)
+    if (raw) { const obj = JSON.parse(raw); if (obj && typeof obj === 'object') return obj }
+  } catch {}
+  return null
+}
+function readPlan(id) {
+  const st = history.state?.plan
+  if (st && typeof st === 'object') return st
+  try {
+    const raw = sessionStorage.getItem(`plan:${id}`)
+    if (raw) { const obj = JSON.parse(raw); if (obj && typeof obj === 'object') return obj }
+  } catch {}
+  return null
+}
+
+/* ===== Back ===== */
 const goBack = () => {
   const id = routeId.value
   if (hasSeatmap.value) {
@@ -47,20 +101,299 @@ const goBack = () => {
   }
 }
 
+/* ===== Availability (ต่อโซนเท่านั้น) ===== */
+const showAvail = ref(false)
+const loadingAvail = ref(false)
+const availError = ref('')
+const latestAvail = ref([])           // raw list [{ zoneId, zoneName, available }, ...]
+const capacityByZone = ref({})   // { [id or nameKey]: capacity }
+const liveAvailByZone = ref({})       // { [id]: n, [nameKey]: n }
+let availTimer = null
+
+function liveAvailableFor(z) {
+  const byId = liveAvailByZone.value?.[String(z.id)]
+  if (Number.isFinite(byId)) return Math.max(0, Number(byId))
+  const key = normalizeKey(z.label ?? z.name ?? z.id)
+  const byName = liveAvailByZone.value?.[key]
+  if (Number.isFinite(byName)) return Math.max(0, Number(byName))
+  return Math.max(0, Number(z.remaining ?? 0))
+}
+function left(z) {
+  const live = Math.max(0, liveAvailableFor(z))
+  const q    = Math.max(0, Number(z.qty || 0))
+  return Math.max(0, live - q)
+}
+
+function capacityFor(z){
+  const byId = capacityByZone.value?.[String(z.id)]
+  if (Number.isFinite(byId)) return Math.max(0, Number(byId))
+  const key = normalizeKey(z.label ?? z.name ?? z.id)
+  const byName = capacityByZone.value?.[key]
+  if (Number.isFinite(byName)) return Math.max(0, Number(byName))
+  return undefined
+}
+function reconcileQtyWithLive() {
+  zones.value.forEach(z => {
+    const live = liveAvailableFor(z)           // จากแผนที่ live
+    const cap  = capacityFor(z)                // ถ้ามี
+    const ceiling = cap != null ? Math.min(live, cap) : live
+    if (z.qty > ceiling) z.qty = ceiling
+    if (z.qty < 0) z.qty = 0
+  })
+}
+
+function qtyClass(n){ if (n<=0) return 'zero'; if (n<=10) return 'low'; return 'ok' }
+
+const rowsToShow = computed(() => {
+  if (Array.isArray(latestAvail.value) && latestAvail.value.length > 0) {
+    return latestAvail.value.map(item => {
+      const zoneId   = item.zoneId ?? item.id
+      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
+      const base     = Math.max(0, Number(item.available ?? item.remaining ?? item.left ?? 0))
+
+      // หักเฉพาะ qty ของ “โซนเดียวกัน”
+      let z = zones.value.find(zz => String(zz.id) === String(zoneId))
+      if (!z) {
+        const key = normalizeKey(zoneName)
+        z = zones.value.find(zz => normalizeKey(zz.label ?? zz.name ?? zz.id) === key)
+      }
+      const picked = Math.max(0, Number(z?.qty ?? 0))
+      return { code: zoneName ?? zoneId ?? '-', left: Math.max(0, base - picked) }
+    })
+  }
+  // fallback ใช้สถานะในหน้า
+  return zones.value.map((z,i)=>({ code: z.label || z.name || z.id || `Zone ${i+1}`, left: left(z) }))
+})
+
+/* เติมโซนให้ตรงกับ availability หาก backend ไม่ส่งรายการโซน */
+function ensureZonesFromAvailability() {
+  const existingKeys = new Set(zones.value.map(z => String(z.id)))
+  const priceByName = {}
+  ;(history.state?.plan?.zones || []).forEach(z => {
+    const key = normalizeKey(z.name || z.label || z.code)
+    if (key) priceByName[key] = Number(z.price ?? 0)
+  })
+  const toPush = []
+  for (const it of latestAvail.value || []) {
+    const zoneId   = it.zoneId ?? it.id
+    const zoneName = it.zoneName ?? it.zone ?? it.name ?? it.code ?? `Zone`
+    const keyName  = normalizeKey(zoneName)
+    const existsById   = existingKeys.has(String(zoneId))
+    const existsByName = zones.value.some(z => normalizeKey(z.label ?? z.name ?? z.id) === keyName)
+    if (!existsById && !existsByName) {
+      toPush.push({
+        id: zoneId ?? `Z${zones.value.length + toPush.length + 1}`,
+        label: zoneName,
+        desc: '',
+        price: Number.isFinite(priceByName[keyName]) ? priceByName[keyName] : 0,
+        remaining: Math.max(0, Number(it.available ?? it.remaining ?? it.left ?? 0)),
+        qty: 0
+      })
+    }
+  }
+  if (toPush.length) zones.value.push(...toPush)
+}
+
+/* ===== Fetch availability (ปัจจุบัน) ===== */
+async function getCurrentSessionId() {
+  const id = route.params.id
+  let sid = sessionLabelToId.value?.[selectedShow.value]
+  if (!sid && Array.isArray(sessionsRaw.value) && sessionsRaw.value.length === 1) {
+    sid = sessionsRaw.value[0]?.id
+  }
+  if (!sid) {
+    try {
+      const { data: view } = await api.get(`/events/${id}/view`)
+      const options = (view.sessions || []).map(s => {
+        const dt = s.startAt || s.start_at || view.startDate || view.start_date
+        const tm = s.startTime || s.start_time
+        return { id: s.id, label: s.name || makeShowLabel(dt, tm) }
+      })
+      const found = options.find(o => o.label === selectedShow.value)
+      sid = found?.id || options[0]?.id
+    } catch (e) {
+      console.warn('getCurrentSessionId() failed', e)
+    }
+  }
+  return sid
+}
+
+async function loadAvailOnce() {
+  loadingAvail.value = true
+  availError.value = ''
+  latestAvail.value = []
+
+  try {
+    const sid = await getCurrentSessionId()
+    if (!sid) throw new Error('ไม่พบรอบการแสดง (sessionId)')
+
+    const { data } = await api.get(`/zones/session/${sid}/availability`)
+    latestAvail.value = Array.isArray(data) ? data : []
+
+    // === rebuild live+capacity map (ทั้ง by id และ by name) ===
+    const liveMap = {}
+    const capMap  = {}
+    latestAvail.value.forEach(item => {
+      const zoneId   = item.zoneId ?? item.id
+      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
+      const capacity = Number(item.capacity ?? item.cap ?? 0)
+      // available บางทีติดลบจาก backend → clamp เป็น 0
+      const availableRaw = Number(item.available ?? item.remaining ?? item.left ?? 0)
+      const available    = Math.max(0, availableRaw)
+
+      if (zoneId != null) {
+        liveMap[String(zoneId)] = available
+        if (Number.isFinite(capacity)) capMap[String(zoneId)] = Math.max(0, capacity)
+      }
+      if (zoneName) {
+        const key = normalizeKey(zoneName)
+        liveMap[key] = available
+        if (Number.isFinite(capacity)) capMap[key] = Math.max(0, capacity)
+      }
+    })
+    liveAvailByZone.value = liveMap
+    capacityByZone.value  = capMap
+
+    // sync โซนที่มีอยู่ให้สอดคล้องกับ live (และเพดาน capacity ถ้ามี)
+    zones.value = zones.value.map(z => {
+      const live = liveAvailableFor(z)
+      const cap  = capacityFor(z)
+      const remaining = cap != null ? Math.min(live, cap) : live
+      return { ...z, remaining: remaining }
+    })
+    reconcileQtyWithLive()
+    ensureZonesFromAvailability()
+  } catch (err) {
+    availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
+  } finally {
+    loadingAvail.value = false
+  }
+}
 
 
+async function refreshAvailabilityForSelectedShow() {
+  await loadAvailOnce()
+  // sync remaining ตาม live ต่อโซน
+  zones.value = zones.value.map(z => ({ ...z, remaining: liveAvailableFor(z) }))
+  reconcileQtyWithLive()
+}
 
-const selectedItems = computed(() =>
-  zones.value
-    .filter(z => z.qty > 0)
-    .map(z => ({ zoneId: z.id, zoneLabel: z.label, unitPrice: z.price, qty: z.qty }))
-)
-const canProceed = computed(() => selectedItems.value.length > 0)
+/* ===== UI: open/close modal ===== */
+async function openAvail() {
+  showAvail.value = true
+  await loadAvailOnce()
+  if (availTimer) clearInterval(availTimer)
+  availTimer = setInterval(loadAvailOnce, 5000)
+}
+function closeAvail() {
+  showAvail.value = false
+  if (availTimer) { clearInterval(availTimer); availTimer = null }
+}
 
 
+/* ===== Qty buttons (ลด/เพิ่มเฉพาะโซน) ===== */
+function inc(i) {
+  const z = zones.value[i]
+  if (left(z) > 0) {
+    z.qty = Math.min(z.qty + 1, z.qty + left(z))
+    lastChangedIndex.value = i
+  }
+}
+function dec(i) {
+  const z = zones.value[i]
+  if (z.qty > 0) {
+    z.qty--
+    lastChangedIndex.value = i
+  }
+}
 
 
+// ยิงล็อกที่นั่งตามที่เลือกแบบทีละโซน (sequential)
+// - ลอง payload camelCase ก่อน ถ้า error ลอง snake_case อีกรอบ
+// - ถ้าโซนไหน fail จะ throw พร้อมข้อความที่อ่านได้
+async function reserveSelected(sessionId, eventId) {
+  const items = selectedItems.value
+    .filter(it => Number(it.qty) > 0)
+    .map(it => ({
+      eventId: Number(eventId),
+      sessionId: Number(sessionId),
+      zoneId: Number(it.zoneId),
+      quantity: Number(it.qty),
+    }))
 
+  if (!items.length) throw new Error('ไม่มีรายการโซนที่ต้องล็อก')
+
+  const results = []
+
+  // OPTIONAL: เผื่ออนาคตมี batch endpoint – ไม่ถือเป็น error ถ้า 404
+  try {
+    const { data } = await api.post('/registrations/batch', { items })
+    if (data && Array.isArray(data.results)) {
+      const failed = data.results.find(r => !r.ok)
+      if (failed) throw new Error(failed.message || 'บางโซนล็อกไม่สำเร็จ')
+      return { mode: 'batch', results: data.results, groupId: data.groupId }
+    }
+  } catch (e) {
+    // 404/405/501 หรือใด ๆ ที่ไม่รองรับ batch → ไปทีละโซนต่อ
+  }
+
+  // ยิงทีละโซน เพื่อเลี่ยง race/409 และดู error แยกแต่ละโซนได้
+  for (const it of items) {
+    // 1) camelCase
+    const camelPayload = {
+      eventId: it.eventId,
+      sessionId: it.sessionId,
+      zoneId: it.zoneId,
+      quantity: it.quantity,
+    }
+
+    try {
+      const { data } = await api.post('/registrations', camelPayload)
+      results.push({ zoneId: it.zoneId, ok: true, reservationId: data?.reservationId || data?.id })
+      continue
+    } catch (err1) {
+      const status = err1?.response?.status
+
+      // ถ้าเป็น 401/403 → ให้ผู้ใช้ไปล็อกอิน
+      if (status === 401 || status === 403) {
+        throw new Error('กรุณาเข้าสู่ระบบก่อนทำรายการ')
+      }
+
+      // 2) snake_case fallback (บาง backend ต้อง snake_case)
+      const snakePayload = {
+        event_id: it.eventId,
+        session_id: it.sessionId,
+        zone_id: it.zoneId,
+        quantity: it.quantity,
+      }
+
+      try {
+        const { data } = await api.post('/registrations', snakePayload)
+        results.push({ zoneId: it.zoneId, ok: true, reservationId: data?.reservationId || data?.id })
+        continue
+      } catch (err2) {
+        // รวมข้อความ error อ่านง่ายขึ้น
+        const status2 = err2?.response?.status
+        const msg =
+          err2?.response?.data?.message ||
+          err2?.response?.data?.error ||
+          err1?.response?.data?.message ||
+          err1?.message ||
+          (status2 === 404 ? 'ไม่พบปลายทาง /registrations' :
+           status2 === 409 ? 'มีการจองชนกัน กรุณาลองใหม่' :
+           status2 === 422 ? 'ข้อมูลไม่ถูกต้อง' :
+           status2 >= 500 ? 'เซิร์ฟเวอร์มีปัญหา' : 'ไม่สามารถล็อกที่นั่งได้')
+
+        // หยุดทั้งกลุ่ม เพราะต้องการ atomic feel: โซนใด fail ให้ผู้ใช้ตัดสินใจใหม่
+        throw new Error(`โซน ${it.zoneId}: ${msg}`)
+      }
+    }
+  }
+
+  return { mode: 'sequential', results }
+}
+
+/* ===== Proceed (validate ต่อโซน + บันทึก order/draft) ===== */
 async function goToPayment() {
   if (selectedItems.value.length === 0) {
     alert('กรุณาเลือกที่นั่งอย่างน้อย 1 ที่นั่ง')
@@ -72,511 +405,147 @@ async function goToPayment() {
     return
   }
 
-
-
-
-
-
-
-  const id = route.params.id
-
-  // ---------- หา sessionId ----------
-  let sessionId = sessionLabelToId?.value?.[selectedShow.value]
-
-  // Fallback 1: ถ้ามี sessionsRaw แค่ 1 รอบ → ใช้ id นั้นเลย
-  if (!sessionId && Array.isArray(sessionsRaw?.value) && sessionsRaw.value.length === 1) {
-    sessionId = sessionsRaw.value[0]?.id
-  }
-
-  // Fallback 2: ดึงจาก API แล้ว map label แบบเดียวกับที่ shows ใช้
-  if (!sessionId) {
-    try {
-      const res = await fetch(`/api/events/${id}/view`)
-      if (res.ok) {
-        const api = await res.json()
-        const toTimeLabel = (t)=> String(t||'').slice(0,5)
-        const toDateLabel = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
-        const makeShowLabel = (dateIso, timeStr)=> `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
-        const d = api.startDate || api.start_date
-        const options = (api.sessions || []).map(s => ({
-          id: s.id,
-          label: makeShowLabel(d, s.start_time || s.startTime)
-        }))
-        const found = options.find(o => o.label === selectedShow.value)
-        sessionId = found?.id || options[0]?.id // เผื่อ label ไม่ตรง → เอาตัวแรก
-      }
-    } catch (e) {
-      console.warn('fallback fetch sessions failed', e)
+  // ตรวจความพอ “ต่อโซน”
+  for (const it of selectedItems.value) {
+    const z = zones.value.find(zz => String(zz.id) === String(it.zoneId))
+    if (!z) continue
+    const live = Math.max(0, liveAvailableFor(z))
+    const cap  = capacityFor(z)
+    const ceiling = cap != null ? Math.min(live, cap) : live
+    if (it.qty > ceiling) {
+      alert(`โซน "${it.zoneLabel}" เหลือไม่พอแล้ว (เลือก ${it.qty} แต่เหลือ ${ceiling})`)
+      reconcileQtyWithLive()
+      return
     }
   }
 
-  if (!sessionId) {
-    alert('ไม่พบรอบการแสดง')
+  const eventId   = route.params.id
+  const sessionId = await getCurrentSessionId()
+  if (!sessionId) { alert('ไม่พบรอบการแสดง'); return }
+
+  // 🔒 ล็อกกับ API (หลายโซน)
+  let lock
+  try {
+    lock = await reserveSelected(sessionId, eventId)
+  } catch (e) {
+    alert(e?.message || 'ไม่สามารถล็อกที่นั่งได้ กรุณาลองใหม่')
+    await refreshAvailabilityForSelectedShow()   // sync availability ใหม่
     return
   }
 
-  // ---------- ตรวจ zone/quantity ----------
-  const first = selectedItems.value[0]
-  const zoneId = first?.zoneId
-  const quantity = selectedItems.value.reduce((s, it) => s + Number(it.qty || 0), 0)
-  if (!zoneId || !quantity) {
-    alert('ข้อมูลโซน/จำนวนไม่ครบ')
-    return
-  }
-
-  // ---------- order (โชว์บนหน้า payment) ----------
+  // === order สำหรับหน้า payment ===
   const order = {
-    eventId: id,
+    eventId,
     title: title.value,
     poster: poster.value || fallbackPoster,
     show: selectedShow.value,
     items: selectedItems.value,
-    fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10)
+    fee: Math.round(selectedItems.value.reduce((s, it) => s + it.unitPrice * it.qty, 0) * 0.10),
+    lock, // เก็บผลล็อกไว้
   }
 
-  // ---------- draft (ยิง POST /registrations) ----------
-  const registrationDraft = {
-    eventId: Number(id),
+  // === draft หลายโซน ===
+  const registrationsDraft = selectedItems.value.map(it => ({
+    eventId: Number(eventId),
     sessionId: Number(sessionId),
-    zoneId: Number(zoneId),
-    quantity: Number(quantity),
-  }
+    zoneId: Number(it.zoneId),
+    quantity: Number(it.qty),
+  }))
+  const fallbackFirst = registrationsDraft[0] || null
 
-  router.push({ name: 'payment', params: { id }, state: { order, registrationDraft } })
-  sessionStorage.setItem(`order:${id}`, JSON.stringify(order))
-  sessionStorage.setItem(`registrationDraft:${id}`, JSON.stringify(registrationDraft))
-}
-
-
-
-
-/* ===== Fallback รูป ===== */
-const fallbackPoster  = new URL('../assets/poster-fallback.jpg',  import.meta.url).href
-const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.url).href
-
-/* ===== HERO data (เริ่มว่าง แล้วค่อยเติมตอน mount) ===== */
-
-
-/* ===== Stepper ===== */
-const currentStep = 2
-
-function readEventLite(id) {
-  // 1) จาก router state
-  const st = history.state?.eventLite
-  if (st && typeof st === 'object') return st
-
-  // 2) จาก sessionStorage (สำรอง)
-  try {
-    const raw = sessionStorage.getItem(`eventLite:${id}`)
-    if (raw) {
-      const obj = JSON.parse(raw)
-      if (obj && typeof obj === 'object') return obj
-    }
-  } catch {}
-  return null
-}
-
-
-/* ===== อ่าน plan payload จาก state / session ===== */
-function readPlan(id) {
-  const st = history.state?.plan
-  if (st && typeof st === 'object') return st
-  try {
-    const raw = sessionStorage.getItem(`plan:${id}`)
-    if (raw) {
-      const obj = JSON.parse(raw)
-      if (obj && typeof obj === 'object') return obj
-    }
-  } catch {}
-  return null
-}
-
-onMounted(async() => {
-  const id = routeId.value
-  const plan = readPlan(id)
-
-  // เติมค่าจาก plan
-  if (plan) {
-    title.value       = plan.title || ''
-    poster.value      = plan.poster || ''
-    shows.value       = Array.isArray(plan.shows) ? plan.shows : []
-    selectedShow.value = plan.selectedShow || shows.value[0] || ''
-  }
-  if (Array.isArray(plan.sessions) && plan.sessions.length) {
-  sessionsRaw.value = plan.sessions
-  const d = plan.startDate || plan.start_date || plan.startDateRaw
-  shows.value = plan.sessions.map(s => makeShowLabel(d, s.start_time || s.startTime))
-  // สร้าง map label -> id
-  sessionLabelToId.value = {}
-  plan.sessions.forEach(s => {
-    const label = makeShowLabel(d, s.start_time || s.startTime)
-    sessionLabelToId.value[label] = s.id
+  router.push({
+    name: 'payment',
+    params: { id: eventId },
+    state: { order, registrationsDraft, registrationDraft: fallbackFirst }
   })
-  selectedShow.value ||= shows.value[0] || ''
-  await refreshAvailabilityForSelectedShow()
-}
 
-
-  // 🔽 เพิ่ม: อ่าน eventLite เพื่อตัดสินว่ามีผังไหม
-  const lite = readEventLite(id)
-  const seatmapUrl = lite?.seatmapImageUrl || lite?.seatmap || ''
-  hasSeatmap.value = !!seatmapUrl && !/seatmap-fallback/i.test(seatmapUrl)
-
-  // fallback รูป กันรูปหาย/ว่าง
-  if (!poster.value)  poster.value  = fallbackPoster
-})
-
-/* ===== โซน (เดิมของคุณ) ===== */
-const zones = ref([])
-
-const lastChangedIndex = ref(0)
-
-
-const totalQty    = computed(() => zones.value.reduce((s,z)=> s + z.qty, 0))
-const totalAmount = computed(() => zones.value.reduce((s,z)=> s + z.qty * z.price, 0))
-const primaryZone = computed(()=>{
-  const picked = zones.value.findIndex(z => z.qty > 0)
-  const idx = (zones.value[lastChangedIndex.value]?.qty ?? 0) > 0
-    ? lastChangedIndex.value
-    : (picked === -1 ? 0 : picked)
-  return zones.value[idx]
-})
-function formatTHB(n){ return n.toLocaleString('en-US') + ' THB' }
-
-// ===== helper: แปลง sessions -> zones =====
-function buildZonesFromSessions(sessions, startDate) {
-  if (!Array.isArray(sessions) || sessions.length === 0) return []
-  const toHHmm = (t) => (t ? String(t).slice(0,5) : '')
-  const toThaiDate = (iso) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    const dd = d.toLocaleDateString('en-GB', { day:'2-digit' })
-    const mon = d.toLocaleDateString('en-US', { month:'short' })
-    const yyyy = d.getFullYear()
-    return `${dd} ${mon} ${yyyy}`
+  sessionStorage.setItem(`order:${eventId}`, JSON.stringify(order))
+  sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(registrationsDraft))
+  if (fallbackFirst) {
+    sessionStorage.setItem(`registrationDraft:${eventId}`, JSON.stringify(fallbackFirst))
   }
-
-  return sessions.map((s, i) => {
-    const labelTime = toHHmm(s.start_time || s.startTime)
-    const labelDate = toThaiDate(startDate)
-    const label = s.name || (labelDate && labelTime ? `${labelDate} ${labelTime}` : (labelTime || labelDate || `รอบที่ ${i+1}`))
-    return {
-      id: s.id || `S${i+1}`,
-      label,
-      desc: s.name ? labelTime : '',                 // โชว์เวลาใต้ชื่อถ้ามี
-      price: Number(s.price ?? 0),
-      remaining: Number(s.max_participants ?? 0),
-      qty: 0
-    }
-  })
 }
 
-// ===== onMounted ใน SeatZone =====
+
+
+
+/* ===== Initial mount ===== */
 onMounted(async () => {
   const id = routeId.value
   const plan = readPlan(id)
 
-  // HERO จาก plan ก่อน
+  // HERO จาก plan
   if (plan) {
-    title.value  = plan.title || ''
-    poster.value = plan.poster || fallbackPoster
-    shows.value  = Array.isArray(plan.shows) ? plan.shows : []
+    title.value        = plan.title || ''
+    poster.value       = plan.poster || ''
+    shows.value        = Array.isArray(plan.shows) ? plan.shows : []
     selectedShow.value = plan.selectedShow || shows.value[0] || ''
   }
+
+  // sessions -> shows + mapping
+  if (Array.isArray(plan?.sessions) && plan.sessions.length) {
+    sessionsRaw.value = plan.sessions
+    const d = plan.startDate || plan.start_date || plan.startDateRaw
+    shows.value = plan.sessions.map(s => {
+      const label = s.name || makeShowLabel(d, s.start_time || s.startTime)
+      sessionLabelToId.value[label] = s.id
+      return label
+    })
+    selectedShow.value ||= shows.value[0] || ''
+    await refreshAvailabilityForSelectedShow()
+  }
+
+  // seatmap flag
+  const lite = readEventLite(id)
+  const seatmapUrl = lite?.seatmapImageUrl || lite?.seatmap || ''
+  hasSeatmap.value = !!seatmapUrl && !/seatmap-fallback/i.test(seatmapUrl)
+
   if (!poster.value) poster.value = fallbackPoster
 
-  // 1) ใช้ zones/sessions ที่ติดมาจาก plan ก่อน
-  if (plan?.zones?.length) {
-    zones.value = plan.zones.map((z, i) => ({
-      id: z.id || `Z${i+1}`,
-      label: z.name || z.label || `Zone ${i+1}`,
-      desc: z.desc || '',
-      price: Number(z.price ?? 0),
-      remaining: Number(z.capacity ?? z.remaining ?? 0),
-      qty: 0,
-    }))
-    return
-  }
-  if (plan?.sessions?.length) {
-    const startDate = plan.startDate || plan.start_date || plan.startDateRaw
-    zones.value = buildZonesFromSessions(plan.sessions, startDate)
-    return
-  }
-
-  // 2) ถ้า plan ไม่มีอะไรเลย → ดึงจาก API
-  try {
-    const res = await fetch(`/api/events/${id}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const api = await res.json()
-
-    // HERO เสริมจาก API
-    if (!title.value)  title.value = api.title || ''
-    if (!poster.value) poster.value = api.posterImageUrl || api.detailImageUrl || fallbackPoster
-    if (!shows.value?.length) {
-      // สร้าง shows แบบง่ายจาก sessions
-     if (Array.isArray(api.sessions) && api.sessions.length) {
-  sessionsRaw.value = api.sessions
-  const d = api.startDate || api.start_date
-  shows.value = api.sessions.map(s => makeShowLabel(d, s.start_time || s.startTime))
-  sessionLabelToId.value = {}
-  api.sessions.forEach(s => {
-    const label = makeShowLabel(d, s.start_time || s.startTime)
-    sessionLabelToId.value[label] = s.id
-  })
-  selectedShow.value = shows.value[0] || ''
-}
-    }
-
-    // ทำ zones
-    if (Array.isArray(api.zones) && api.zones.length) {
-      zones.value = api.zones.map((z, i) => ({
-        id: z.id || `Z${i+1}`,
-        label: z.name || `Zone ${i+1}`,
-        desc: '',
-        price: Number(z.price ?? 0),
-        remaining: Number(z.capacity ?? 0),
-        qty: 0,
-      }))
-    } else if (Array.isArray(api.sessions) && api.sessions.length) {
-      const startDate = api.startDate || api.start_date
-      zones.value = buildZonesFromSessions(api.sessions, startDate)
-    } else {
-      zones.value = []
-    }
-  } catch (e) {
-    console.error('SeatZone load failed:', e)
-    zones.value = []
-  }
-})
-
-// คงเหลือจริง = โควตาเดิม (remaining) - จำนวนที่เลือก (qty)
-function left(z) {
-  const live = liveAvailableFor(z)   // ว่างจริงของรอบปัจจุบัน (จาก API)
-  const q    = Number(z.qty || 0)
-  return Math.max(0, live - q)
-}
-
-
-function inc(i) {
-  const z = zones.value[i]
-  if (left(z) > 0) {        // เพิ่มได้ก็ต่อเมื่อยังเหลือ
-    z.qty++
-    lastChangedIndex.value = i
-  }
-}
-
-function dec(i) {
-  const z = zones.value[i]
-  if (z.qty > 0) {
-    z.qty--
-    lastChangedIndex.value = i
-  }
-}
-
-/* ===== Dropdown ที่นั่งว่าง ===== */
-const showAvail = ref(false)
-const loadingAvail = ref(false)
-const availError = ref('')
-const latestAvail = ref([])     // [{ zoneId, zoneName, capacity, available }, ...]
-let availTimer = null           // setInterval handler
-
-// ===== mapping availability สด เพื่อให้ + / - อ้างอิงเลขเดียวกับ dropdown =====
-const liveAvailByZone = ref({})  // { [zoneId:string|number]: number } หรือใช้ key เป็นชื่อ
-
-function normalizeKey(v) {
-  return String(v ?? '').trim().toLowerCase()
-}
-
-// หาค่า available สดของโซน (จาก id ก่อน ถ้าไม่เจอใช้ชื่อ/label)
-function liveAvailableFor(z) {
-  const byId = liveAvailByZone.value?.[String(z.id)]
-  if (Number.isFinite(byId)) return Number(byId)
-
-  // จับคู่ด้วยชื่อในกรณีไม่มี id จาก API
-  const k1 = normalizeKey(z.label ?? z.name ?? z.id)
-  const byName = liveAvailByZone.value?.[k1]
-  if (Number.isFinite(byName)) return Number(byName)
-
-  // fallback: ใช้ค่าเดิมของโควตา (remaining) ถ้าไม่มี live
-  return Number(z.remaining ?? 0)
-}
-
-// หลังอัปเดต availability สด: บีบ qty ไม่ให้เกิน live
-function reconcileQtyWithLive() {
-  zones.value.forEach(z => {
-    const live = liveAvailableFor(z)
-    if (z.qty > live) {
-      z.qty = Math.max(0, live) // ลดลงให้ไม่เกินของจริง
-    }
-  })
-}
-
-// ใช้คลาสสีตามจำนวนคงเหลือ
-function qtyClass(n){
-  if (n <= 0) return 'zero'
-  if (n <= 10) return 'low'
-  return 'ok'
-}
-// เลือกแถวที่จะโชว์: ถ้ามี latestAvail จาก API ให้ใช้ก่อน, ไม่งั้น fallback จาก zones เดิม
-const rowsToShow = computed(() => {
-  if (Array.isArray(latestAvail.value) && latestAvail.value.length > 0) {
-    return latestAvail.value.map(item => {
-      const zoneId   = item.zoneId ?? item.id
-      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
-      const base     = Number(item.available ?? item.remaining ?? item.left ?? 0)
-
-      // หาค่า qty ที่เลือกในโซนเดียวกัน
-      const selectedQty = (() => {
-        // จับคู่ด้วย id ก่อน
-        let z = zones.value.find(zz => String(zz.id) === String(zoneId))
-        if (!z) {
-          // ถ้าไม่มี id ให้จับคู่ด้วยชื่อ
-          const key = normalizeKey(zoneName)
-          z = zones.value.find(zz => normalizeKey(zz.label ?? zz.name ?? zz.id) === key)
-        }
-        return Number(z?.qty ?? 0)
-      })()
-
-      const left = Math.max(0, base - selectedQty) // เหลือหลังหักสิ่งที่เราเลือกไว้
-      return {
-        code: zoneName ?? zoneId ?? '-',
-        left
-      }
-    })
-  }
-
-  // fallback จาก zones เดิม
-  return zones.value.map((z,i) => ({
-    code: z.label || z.name || z.id || `Zone ${i+1}`,
-    left: left(z) // ใช้สูตรใหม่ (live - qty)
-  }))
-})
-
-
-// ===== หา sessionId ปัจจุบันตาม selectedShow =====
-// (ย้าย/คัดลอก logic เดิมจาก goToPayment มาใช้ซ้ำได้)
-async function getCurrentSessionId() {
-  const id = route.params.id
-  // 1) จากแผนที่ label -> id (ถ้ามี)
-  let sid = sessionLabelToId?.value?.[selectedShow.value]
-
-  // 2) ถ้ามี sessionsRaw แค่ 1 รอบ ใช้อันนั้นเลย
-  if (!sid && Array.isArray(sessionsRaw?.value) && sessionsRaw.value.length === 1) {
-    sid = sessionsRaw.value[0]?.id
-  }
-
-  // 3) ดึงจาก /api/events/{id}/view แล้วแมป label → id (กันกรณีเข้าหน้านี้ตรง ๆ)
-  if (!sid) {
+  // ถ้า plan ไม่มีอะไรเลย → ดึงจาก API อีเวนต์
+  if (!plan?.sessions?.length && !plan?.zones?.length) {
     try {
-      const res = await fetch(`/api/events/${id}/view`)
-      if (res.ok) {
-        const api = await res.json()
-        const toTimeLabel = (t)=> String(t||'').slice(0,5)
-        const toDateLabel = (iso)=> new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
-        const makeShowLabel = (dateIso, timeStr)=> `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
-        const d = api.startDate || api.start_date
-        const options = (api.sessions || []).map(s => ({
-          id: s.id,
-          label: makeShowLabel(d, s.start_time || s.startTime)
+      const { data: ev } = await api.get(`/events/${id}`)
+      if (!title.value)  title.value  = ev.title || ''
+      if (!poster.value) poster.value = ev.posterImageUrl || ev.detailImageUrl || fallbackPoster
+
+      if (!shows.value?.length && Array.isArray(ev.sessions) && ev.sessions.length) {
+        sessionsRaw.value = ev.sessions
+        const d = ev.startDate || ev.start_date
+        shows.value = ev.sessions.map(s => {
+          const label = s.name || makeShowLabel(d, s.start_time || s.startTime)
+          sessionLabelToId.value[label] = s.id
+          return label
+        })
+        selectedShow.value = shows.value[0] || ''
+        await refreshAvailabilityForSelectedShow()
+      }
+
+      // ถ้า backend มี zones fixed ติดอีเวนต์
+      if (Array.isArray(ev.zones) && ev.zones.length) {
+        zones.value = ev.zones.map((z, i) => ({
+          id: z.id || `Z${i+1}`,
+          label: z.name || `Zone ${i+1}`,
+          desc: '',
+          price: Number(z.price ?? 0),
+          remaining: Math.max(0, Number(z.capacity ?? z.remaining ?? 0)),
+          qty: 0,
         }))
-        const found = options.find(o => o.label === selectedShow.value)
-        sid = found?.id || options[0]?.id
       }
     } catch (e) {
-      console.warn('getCurrentSessionId() fetch failed', e)
+      console.error('SeatZone load failed:', e)
+      zones.value = []
     }
   }
+})
 
-  return sid
-}
-
-async function refreshAvailabilityForSelectedShow() {
-  await loadAvailOnce()     // ดึง /availability ของ session ปัจจุบัน → อัปเดต liveAvailByZone
-
-  // อัปเดต remaining บน zones ให้สอดคล้องกับ live และบีบ qty ให้ไม่เกิน
-  zones.value = zones.value.map(z => ({
-    ...z,
-    remaining: liveAvailableFor(z)
-  }))
-  reconcileQtyWithLive()
-}
-
-
-// โหลด availability 1 ครั้ง
-async function loadAvailOnce() {
-  loadingAvail.value = true
-  availError.value = ''
-  latestAvail.value = []
-
-  try {
-    const sid = await getCurrentSessionId()
-    if (!sid) throw new Error('ไม่พบรอบการแสดง (sessionId)')
-
-    const res = await fetch(`/api/zones/session/${sid}/availability`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-
-    // คาดรูปแบบ: [{ zoneId, zoneName, capacity, available }, ...]
-    latestAvail.value = Array.isArray(data) ? data : []
-
-      // === สร้าง liveAvailByZone จากผล API ===
-    const map = {}
-    latestAvail.value.forEach(item => {
-      // รองรับหลายชื่อคีย์จาก backend
-      const zoneId = item.zoneId ?? item.id
-      const zoneName = item.zoneName ?? item.zone ?? item.name ?? item.code
-      const available = Number(item.available ?? item.remaining ?? item.left ?? 0)
-
-      if (zoneId != null) map[String(zoneId)] = available
-      if (zoneName)      map[normalizeKey(zoneName)] = available
-    })
-    liveAvailByZone.value = map
-
-    // บังคับ qty ปัจจุบันไม่ให้เกินเลขว่างจริง
-    reconcileQtyWithLive()
-  } catch (err) {
-    availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
-  } finally {
-    loadingAvail.value = false
-  }
-}
-// เปิดโมดัล + เริ่ม auto-refresh
-async function openAvail() {
-  showAvail.value = true
-  await loadAvailOnce()
-  // refresh ทุก 5 วินาที
-  if (availTimer) clearInterval(availTimer)
-  availTimer = setInterval(loadAvailOnce, 5000)
-}
-
-// ปิดโมดัล + หยุด refresh
-function closeAvail() {
-  showAvail.value = false
-  if (availTimer) {
-    clearInterval(availTimer)
-    availTimer = null
-  }
-}
-/* แถวสำหรับโชว์ในดรอปดาวน์ (คำนวณจาก zones ทุกครั้ง → อัปเดตอัตโนมัติ) */
-const availRows = computed(() =>
-  zones.value.map((z, i) => ({
-    code: z.label || z.name || z.id || `Zone ${i + 1}`,
-    left: left(z),                                // ใช้ฟังก์ชัน left ที่มีอยู่แล้ว
-  }))
-)
-
-const sessionsRaw = ref([])             // เก็บ sessions ดิบไว้หาคู่กับ label
-const sessionLabelToId = ref({})        // map: label -> sessionId
-function toTimeLabel(t){ return String(t||'').slice(0,5) }
-function toDateLabel(iso){
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'2-digit',year:'numeric'})
-}
-function makeShowLabel(dateIso, timeStr){
-  return `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
-}
+/* ===== เปลี่ยนรอบ -> โหลด availability ใหม่ + sync โซน ===== */
+watch(selectedShow, async () => {
+  await refreshAvailabilityForSelectedShow()
+})
 
 </script>
+
 
 
 <template>
@@ -684,6 +653,7 @@ function makeShowLabel(dateIso, timeStr){
       <div class="zone-sub">ราคา {{ formatTHB(z.price) }}</div>
       <!-- ใช้คงเหลือจริง -->
       <div class="zone-leftover muted">เหลือ {{ left(z) }} ที่นั่ง</div>
+
     </div>
 
     <div class="zone-qty">
@@ -965,4 +935,3 @@ select{
   .sum-right{ width:100%; justify-content:space-between; }
 }
 </style>
-

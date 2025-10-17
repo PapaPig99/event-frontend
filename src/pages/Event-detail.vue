@@ -312,6 +312,14 @@ function scrollToStage() {
 function goToConcertPlan(session) {
   const id = route.params.id
 
+  const sessionsLite = (Array.isArray(sessions.value) ? sessions.value : []).map(s => ({
+    id: s.id,
+    // รองรับหลายชื่อ field จาก backend
+    startAt: s.startAt || s.start_at || s.startDate || s.date || null,
+    startTime: (s.startTime || s.start_time || '').slice(0,5),
+    name: s.name || null
+  }))
+
   // เก็บข้อมูลย่อส่งต่อไปหน้า ConcertPlan (ใส่เท่าที่มีจากหน้านี้)
   const eventLite = {
     id,
@@ -322,6 +330,7 @@ function goToConcertPlan(session) {
     location: event.value.venueText,
     startAt: session?.startAt || session?.start_at || session?.startDate || null,
     startTime: (session?.startTime || session?.start_time || '').replace(/:00$/, ''),
+    sessions: sessionsLite
   }
 
   // ส่งผ่าน router state และกันพลาดเก็บไว้ใน sessionStorage
@@ -532,46 +541,12 @@ async function checkAvailabilityAndGo(session){
   </div>
 
 
-  <!-- SOLD OUT OVERLAY -->
-<div v-if="showSoldOut" class="overlay-backdrop" @click.self="showSoldOut=false">
-  <div class="overlay-card">
-    <button class="overlay-close" @click="showSoldOut=false">×</button>
-    <h3>บัตรหมดแล้ว</h3>
-    <p>{{ soldOutMsg }}</p>
-    <button class="overlay-ok" @click="showSoldOut=false">โอเค เข้าใจแล้ว</button>
-  </div>
-</div>
+
 
 </template>
 
 <!-- ===== Global minimal reset (กัน Vite บีบ #app) ===== -->
 <style>
-.overlay-backdrop{
-  position:fixed; inset:0; z-index:1100;
-  background:rgba(0,0,0,.55);
-  display:flex; align-items:center; justify-content:center;
-  padding:24px;
-}
-.overlay-card{
-  background:#fff; color:#111; border-radius:14px; padding:20px;
-  width:min(420px, 92vw); box-shadow:0 20px 60px rgba(0,0,0,.35);
-  text-align:center;
-}
-.overlay-card h3{ margin:0 0 8px; font-size:20px; font-weight:800; }
-.overlay-card p{ margin:0 0 16px; color:#334155; }
-.overlay-ok{
-  background: linear-gradient(90deg, #ff3d00, #ff6a13);
-  color:#fff; font-weight:800; border:none; border-radius:999px;
-  padding:10px 18px; cursor:pointer; box-shadow:0 6px 14px rgba(255,106,19,.25);
-}
-.overlay-close{
-  position:absolute; transform:translate(190px, -10px);
-  width:34px; height:34px; border:none; border-radius:50%;
-  background:#111; color:#fff; font-size:20px; cursor:pointer;
-}
-@media (max-width:480px){
-  .overlay-close{ transform:translate(160px, -10px); }
-}
 
 /* ===== Date/Time table inside black stage card ===== */
 .date-table{
