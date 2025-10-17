@@ -136,8 +136,6 @@ function buildDto() {
     detailImageUrl: form.detailImage ? null : form.detailUrl,
     seatmapImageUrl: form.seatmapImage ? null : form.seatmapUrl,
 
-    createdByUserId: 1,
-
     sessions: form.rounds.map(r => ({
       id: r.id ?? null,
       name: r.roundName,
