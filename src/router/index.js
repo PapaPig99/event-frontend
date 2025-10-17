@@ -29,7 +29,6 @@ const routes = [
         name: 'payment',
         component: () => import('@/pages/Payment.vue'), // ให้ชื่อไฟล์ตรงจริง (ตัวเล็ก/ใหญ่ด้วย).
         props: true,
-        meta: { requiresAuth: true }
       },
 
       { path: 'myevent', name: 'my-event', component: () => import('@/pages/MyEvent.vue'), meta: { requiresAuth: true } },
