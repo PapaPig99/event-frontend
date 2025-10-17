@@ -21,7 +21,7 @@
             <div class="info-item">
               <i class="fa-regular fa-calendar"></i>
               <div>
-                <div class="label">วันที่เริ่มงาน</div>
+                <div class="label">วันงาน</div>
                 <div class="value">{{ showDateText }}</div>
               </div>
             </div>
@@ -270,11 +270,27 @@ const fallbackSeatmap = new URL('../assets/seatmap-fallback.png', import.meta.ur
 const hasSeatmap = computed(() => !!event.seatmapUrl && event.seatmapUrl !== fallbackSeatmap);
 
 const showDateText = computed(() => {
-  if (!event.sessions?.length) return "-";
+  if (!event.startDate || !event.endDate) return "-";
 
-  const names = event.sessions.map(s => s.name).filter(Boolean);
-  return names.join(" / ");
+  const start = new Date(event.startDate);
+  const end = new Date(event.endDate);
+
+  const formatShort = (d, withYear = false) => {
+    const opts = { day: "numeric", month: "short" };
+    if (withYear) opts.year = "numeric";
+    return d.toLocaleDateString("th-TH", opts);
+  };
+
+  if (start.toDateString() === end.toDateString()) {
+    return `จัดวันที่ ${formatShort(start, true)}`;
+  }
+
+  return `${formatShort(start)}  - ${formatShort(end, true)}`;
 });
+
+
+
+
 
 
 const doorOpenText = computed(() => event.doorOpenTime || "-");
