@@ -531,7 +531,8 @@ async function save() {
             </div>
 
             <div class="gallery two-col">
-              <div class="gallery-item">
+            <!-- รูปภาพเพิ่มเติม -->
+              <!-- <div class="gallery-item">
                 <label class="uplabel">รูปภาพเพิ่มเติม</label>
                 <button v-if="form.detailUrl" class="text-del" type="button" @click="clearDetail"
                   aria-label="ลบรูปโปสเตอร์">✕</button>
@@ -542,7 +543,7 @@ async function save() {
                   </div>
                   <div class="placeholder" v-else>อัปโหลดรูปภาพ</div>
                 </div>
-              </div>
+              </div> -->
 
               <div class="gallery-item">
                 <label class="uplabel">ผังงาน/ผังที่นั่ง</label>

@@ -1,81 +1,78 @@
 <template>
-  <header class="column-head" :style="{ '--head-color': color }">
-    <!-- ชั้นที่ 1: ชื่อ category -->
-    <div class="head-title">
-      <span class="title">{{ title }}</span>
-    </div>
+  <div class="filter-wrap">
+    <button
+      class="chip"
+      :class="{ active: modelValue.length === 0 }"
+      @click="$emit('update:modelValue', [])"
+      title="แสดงทั้งหมด"
+    >
+      ทั้งหมด
+    </button>
 
-    <!-- ชั้นที่ 2: ค้นหา -->
-    <div class="head-search">
-      <input
-        :placeholder="placeholder"
-        v-model="localValue"
-        @input="$emit('update:modelValue', localValue)"
-      />
-      <svg class="search-ic" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor"
-          d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.71.71l.27.28v.79L20 20.5 21.5 19 15.5 14zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/>
-      </svg>
-    </div>
-  </header>
+    <button
+      v-for="opt in options"
+      :key="opt.key"
+      class="chip"
+      :class="{ active: modelValue.includes(opt.key) }"
+      @click="toggle(opt.key)"
+      :style="opt.color ? { '--chip-color': opt.color } : {}"
+      :title="opt.label"
+    >
+      {{ opt.label }}
+    </button>
+  </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
-
 const props = defineProps({
-  title: { type: String, required: true },
-  color: { type: String, default: '#4EA5FF' },       // สีแถบหมวด (ชั้นบน)
-  modelValue: { type: String, default: '' },         // v-model สำหรับข้อความค้นหา
-  placeholder: { type: String, default: 'ค้นหาในหมวด' },
+  options: { type: Array, required: true },
+  modelValue: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['update:modelValue'])
 
-const localValue = ref(props.modelValue)
-watch(() => props.modelValue, v => (localValue.value = v))
+function toggle(key) {
+  const set = new Set(props.modelValue)
+  if (set.has(key)) set.delete(key)
+  else set.add(key)
+  emit('update:modelValue', Array.from(set))
+}
 </script>
 
 <style scoped>
-.column-head { padding: 5px; }
-.head-title {
-  background: var(--head-color);
-  color: #fff;
-  font-weight: 700;
-  text-align: center;
-  padding: 10px 8px;
+.filter-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
-.title { 
-  letter-spacing: .2px;
-  font-size: 18px;
-  color: #fff;
- }
 
-/* แถบค้นหา */
-.head-search {
-  position: relative;
+.chip {
+  --chip-color: #FF3336;
+  appearance: none;
+  border: 1.6px solid #e7e6e6;
   background: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,.16);
-  border: 1px solid #e5e5e5;
-  border-top: none;
-  height: 36px;
-    font-size: 14px;
-
-}
-.head-search input {
-  all: unset;
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  padding: 0 34px 0 10px; 
   color: #333;
-}
-.search-ic {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px; height: 18px;
-  color: #9aa0a6;
+  padding: 10px 20px; /* ↑ เพิ่มขนาดปุ่ม */
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 15px; /* ↑ ตัวอักษรใหญ่ขึ้น */
+  font-weight: 500;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+.chip:hover {
+  background: #f5f5f5;
+  transform: translateY(-1px);
+}
+
+.chip.active {
+  background: var(--chip-color);
+  border-color: var(--chip-color);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.chip:active {
+  transform: scale(0.97);
+}
 </style>
