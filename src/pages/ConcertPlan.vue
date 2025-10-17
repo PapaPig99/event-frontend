@@ -2,6 +2,20 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
+import { watch, onUnmounted } from 'vue'
+
+/* ====== ใช้สำหรับ map label -> sessionId ====== */
+const sessionsRaw = ref([])           // เก็บ sessions จาก API (ดิบ)
+const sessionLabelToId = ref({})  
+function toTimeLabel(t){ return String(t||'').slice(0,5) }
+function toDateLabel(iso){
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('en-US',
+    { weekday:'short', month:'short', day:'2-digit', year:'numeric' })
+}
+function makeShowLabel(dateIso, timeStr){
+  return `${toDateLabel(dateIso)} ${toTimeLabel(timeStr)}`
+}
 /* ===== Router ===== */
 const router = useRouter()
 const route  = useRoute()
@@ -22,6 +36,9 @@ const hasSeatmap = computed(() => {
 const shows   = ref([])         // ['Sat 11 Oct 2025 20:00', ...]
 const selectedShow = ref('')
 const statusText = ref('ที่นั่งว่าง') // ใส่ค่า default ไว้ก่อน
+
+
+
 
 /* ===== Helpers ===== */
 function readEventLite(id) {
@@ -61,38 +78,33 @@ function mergeEvent(api, lite) {
 }
 
 /** แปลง sessions + start_date ให้เป็นรายการโชว์สำหรับ select */
+/** แปลง sessions + start_date -> รายการโชว์ และเตรียม map label->id */
 function buildShows(merged) {
   const out = []
+  sessionLabelToId.value = {}
+  sessionsRaw.value = Array.isArray(merged.sessions) ? merged.sessions : []
 
-  // กรณีมี sessions
-  if (Array.isArray(merged.sessions) && merged.sessions.length > 0) {
-    merged.sessions.forEach(s => {
-      // ถ้าฐานข้อมูลคุณเก็บ start_time เป็น TIME และวันที่อยู่ที่ events.start_date
-      const d = merged.startDate || merged.start_date
-      const t = s.start_time || s.startTime
-      if (d && t) {
-        out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
-      } else if (d) {
-        out.push(`${fmtThaiDate(d)}`)
-      } else if (t) {
-        out.push(`${fmtHHmm(t)}`)
-      }
+  if (sessionsRaw.value.length > 0){
+    const d = merged.startDate || merged.start_date || merged.startDateRaw
+    sessionsRaw.value.forEach(s => {
+      const label = makeShowLabel(d, s.start_time || s.startTime)
+      out.push(label)
+      sessionLabelToId.value[label] = s.id
     })
   }
 
-  // ถ้าไม่มี sessions แต่มี startDate/doorOpenTime จาก lite หรือ api
+  // fallback (ไม่มี sessions)
   if (out.length === 0) {
     const d = merged.startDate || merged.start_date || merged.startDateRaw
     const t = merged.doorOpenTime || merged.door_open_time
     if (d && t) out.push(`${fmtThaiDate(d)} ${fmtHHmm(t)}`)
-    else if (d) out.push(`${fmtThaiDate(d)}`)
+    else if (d) out.push(fmtThaiDate(d))
   }
 
-  // อย่างน้อยให้มี 1 รายการ เพื่อไม่ให้ select ว่าง
   if (out.length === 0) out.push('รอประกาศรอบ')
-
   return out
 }
+
 
 /* ===== โหลดข้อมูลเมื่อเข้าหน้า ===== */
 onMounted(async () => {
@@ -169,7 +181,89 @@ function goToSeatzone() {
 
 /* ===== ดรอปดาวน์/โมดัลที่นั่งว่าง ===== */
 const showAvail = ref(false)
+const loadingAvail = ref(false)
+const availError = ref('')
+const latestAvail = ref([])           // ข้อมูลสดจาก API
+let availTimer = null 
 
+const rowsToShow = computed(() => {
+  if (latestAvail.value?.length) {
+    return latestAvail.value.map(z => ({
+      code: z.zoneName ?? z.zone ?? z.code ?? z.name ?? z.zoneId ?? '-',
+      left: Number(z.available ?? z.remaining ?? z.left ?? 0)
+    }))
+  }
+  return availability.value // [{code,left}] ที่คุณสร้างไว้เดิม
+})
+
+
+function qtyClass(n){
+  if (n <= 0) return 'zero'
+  if (n <= 10) return 'ok'   // ถ้าต้องแยกสี “เหลือน้อย” ใส่คลาสอื่นเองได้
+  return 'ok'
+}
+
+// หา sessionId จาก label ที่เลือก
+async function getCurrentSessionId(){
+  // 1) map จาก label -> id (ถ้า build แล้ว)
+  let sid = sessionLabelToId.value?.[selectedShow.value]
+  // 2) ถ้ารอบเดียว
+  if (!sid && sessionsRaw.value?.length === 1) sid = sessionsRaw.value[0]?.id
+  // 3) ถ้ายังไม่ได้ map (กรณีเข้าหน้าตรง ๆ) ลองโหลด /view มาสร้าง map
+  if (!sid) {
+    try{
+      const id = routeId.value
+      const res = await fetch(`/api/events/${id}/view`)
+      if (res.ok){
+        const api = await res.json()
+        const d = api.startDate || api.start_date
+        const options = (api.sessions||[]).map(s => ({
+          id: s.id, label: makeShowLabel(d, s.start_time || s.startTime)
+        }))
+        const found = options.find(o => o.label === selectedShow.value)
+        sid = found?.id || options[0]?.id
+      }
+    }catch(e){ console.warn('map session failed', e) }
+  }
+  return sid
+}
+
+// โหลด availability 1 ครั้ง (ใช้ตอนเปิดโมดัล + ตอนเปลี่ยนรอบ)
+async function loadAvailOnce(){
+  loadingAvail.value = true
+  availError.value = ''
+  latestAvail.value = []
+  try{
+    const sid = await getCurrentSessionId()
+    if (!sid) throw new Error('ไม่พบรอบการแสดง')
+
+    const res = await fetch(`/api/zones/session/${sid}/availability`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    latestAvail.value = Array.isArray(data) ? data : []
+  }catch(err){
+    availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
+  }finally{
+    loadingAvail.value = false
+  }}
+
+
+  async function openAvail(){
+  showAvail.value = true
+  await loadAvailOnce()
+  if (availTimer) clearInterval(availTimer)
+  availTimer = setInterval(loadAvailOnce, 5000) // refresh 5s
+}
+function closeAvail(){
+  showAvail.value = false
+  if (availTimer){ clearInterval(availTimer); availTimer = null }
+}
+
+// เปลี่ยนรอบแล้วรีโหลด (ถ้าโมดัลเปิดอยู่)
+watch(selectedShow, async () => {
+  if (showAvail.value) await loadAvailOnce()
+})
+onUnmounted(() => { if (availTimer){ clearInterval(availTimer); availTimer = null } })
 /** คืนรายการโซน + คงเหลือ เพื่อไปแสดงในดรอปดาวน์
  * พยายามอ่านจาก API > eventLite > fallback
  */
@@ -232,42 +326,51 @@ function buildAvailability(mergedOrLite){
           <select v-model="selectedShow" id="show" aria-label="รอบการแสดง">
             <option v-for="(s,i) in shows" :key="i" :value="s">{{ s }}</option>
           </select>
-          <button class="status-chip" @click="showAvail = !showAvail">ที่นั่งว่าง</button>
+          <button class="status-chip" @click="openAvail">ที่นั่งว่าง</button>
+
         </div>
       </div>
 
       <!-- Modal / Dropdown: โซนที่นั่ง -->
-<div v-if="showAvail" class="avail-backdrop" @click.self="showAvail=false">
+<div v-if="showAvail" class="avail-backdrop" @click.self="closeAvail">
   <div class="avail-card">
     <div class="avail-head">
       <div class="title">โซนที่นั่ง</div>
-      <button class="close" @click="showAvail=false">✕</button>
+      <button class="close" @click="closeAvail">✕</button>
     </div>
 
     <div class="avail-table">
-      <div class="row header">
-        <div class="col zone">โซนที่นั่ง</div>
-        <div class="col left">ที่นั่งว่าง</div>
-        <div class="col arrow"></div>
+      <!-- loading -->
+      <div v-if="loadingAvail" class="row" style="justify-content:center; font-weight:700;">
+        กำลังโหลด...
       </div>
 
-      <div
-        v-for="(r,idx) in availability"
-        :key="idx"
-        class="row"
-      >
-        <div class="col zone">{{ r.code }}</div>
-        <div class="col left" :class="{'zero': r.left === 0, 'ok': r.left > 0}">
-          {{ r.left.toLocaleString('en-US') }}
+      <!-- error -->
+      <div v-else-if="availError" class="row" style="justify-content:center; color:#d30000; font-weight:700;">
+        โหลดไม่สำเร็จ: {{ availError }}
+      </div>
+
+      <!-- table -->
+      <template v-else>
+        <div class="row header">
+          <div class="col zone">โซนที่นั่ง</div>
+          <div class="col left">ที่นั่งว่าง</div>
+          <div class="col arrow"></div>
         </div>
-      </div>
 
-      <div v-if="availability.length === 0" class="empty">
-        ไม่พบข้อมูลที่นั่ง
-      </div>
+        <div v-for="(r, idx) in rowsToShow" :key="idx" class="row">
+          <div class="col zone">{{ r.code }}</div>
+          <div class="col left" :class="qtyClass(r.left)">
+            {{ r.left.toLocaleString('en-US') }}
+          </div>
+        </div>
+
+        <div v-if="rowsToShow.length === 0" class="empty">ไม่พบข้อมูลที่นั่ง</div>
+      </template>
     </div>
   </div>
 </div>
+
 
     </section>
 

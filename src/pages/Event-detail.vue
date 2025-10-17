@@ -308,9 +308,6 @@ function scrollToStage() {
 
 
 
-
-
-
 /* ========= ไปหน้าเลือกแผน/ประเภทบัตร ========= */
 function goToConcertPlan(session) {
   const id = route.params.id
