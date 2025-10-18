@@ -337,6 +337,7 @@ function leftOf(z)  { return Number(z.remaining ?? z.left ?? z.available ?? 0) }
 
 /* ===== Qty buttons (รับเป็นอ็อบเจ็กต์โซน, ให้ตรงกับ template) ===== */
 function inc(z){
+  if (isLocked(z)) return               // NEW: กันกดโซนอื่น
   const l = left(z)
   z.qty = Number(z.qty || 0)
   if (l > 0) {
@@ -346,6 +347,7 @@ function inc(z){
   }
 }
 function dec(z){
+  if (isLocked(z)) return               // NEW: กันกดโซนอื่น
   z.qty = Number(z.qty || 0)
   if (z.qty > 0) {
     z.qty -= 1
@@ -353,6 +355,7 @@ function dec(z){
     if (idx >= 0) lastChangedIndex.value = idx
   }
 }
+
 
 /* ===== รายการที่เลือกหลายโซน (ใช้ชื่อ selectedDrafts เพื่อไม่ชนของเดิม) ===== */
 const selectedDrafts = computed(() =>
@@ -484,6 +487,19 @@ onMounted(async () => {
     }
   }
 })
+
+// NEW: โซนที่กำลังถูกเลือก (มี qty > 0)
+const activeZoneId = computed(() => {
+  const picked = zones.value.find(z => Number(z.qty) > 0)
+  return picked ? String(picked.id) : null
+})
+
+// NEW: โซนนี้ถูกล็อกไหม (ห้ามกด) — จะล็อกก็ต่อเมื่อมีโซนที่ถูกเลือกอยู่ และโซนนี้ไม่ใช่โซนนั้น
+function isLocked(z) {
+  const act = activeZoneId.value
+  return !!act && String(z.id) !== act
+}
+
 
 /* ===== เปลี่ยนรอบ -> โหลด availability ใหม่ + sync โซน ===== */
 watch(selectedShow, async () => {
