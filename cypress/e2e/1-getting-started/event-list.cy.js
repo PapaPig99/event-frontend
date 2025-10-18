@@ -16,6 +16,7 @@ const fxEvents = [
     location: 'Impact Arena',
     startDate: '2025-11-01',
     posterImageUrl: '/images/mariah.jpg',
+    status: 'OPEN',              
   },
   {
     id: 202,
@@ -24,6 +25,7 @@ const fxEvents = [
     venue: 'QSNCC',
     date: '2025-12-10',
     detail_image_url: '/images/fin.jpg',
+    status: 'OPEN',              
   },
   {
     id: 303,
@@ -32,8 +34,9 @@ const fxEvents = [
     location: 'Bangkok',
     startDate: '2026-01-20',
     poster_image_url: '/images/edu.jpg',
+    status: 'OPEN',              // ← เพิ่มบรรทัดนี้
   },
-];
+]
 
 Cypress.on('uncaught:exception', () => false);
 
