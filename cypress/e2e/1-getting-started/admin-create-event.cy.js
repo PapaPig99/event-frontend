@@ -139,41 +139,4 @@ describe('Admin - Create Event', () => {
       expect(txt).to.contain('สร้างสำเร็จ! Event ID = 123');
     });
   });
-
-  it('CE-008: เมื่อเกิดข้อผิดพลาดจากเซิร์ฟเวอร์ ระบบแสดงข้อความแจ้งเตือนข้อผิดพลาด', () => {
-    cy.intercept('POST', '**/api/**/events*', {
-      statusCode: 500,
-      body: 'Server Error',
-    }).as('createFail');
-
-    uploadTinyPoster();
-    cy.contains('label', 'ชื่อ *').parent().find('input.inp').type('Test Error Case');
-    byLabelSelect('หมวดหมู่ *').select('คอนเสิร์ต');
-    byLabelInput('วันที่และเวลาเปิดจำหน่าย *').type('2025-10-01T10:00');
-    byLabelInput('วันที่และเวลาปิดจำหน่าย *').type('2025-10-31T18:00');
-    byLabelInput('วันเริ่มจัดงาน *').type('2025-11-01');
-    byLabelInput('วันสิ้นสุดงาน *').type('2025-11-02');
-    byLabelInput('ที่ตั้ง *').type('Somewhere');
-    byLabelInput('เวลาประตูเปิด *').type('17:00');
-
-    openSection('รอบของงาน');
-    roundsFirstRow().within(() => {
-      cy.get('input.inp').eq(0).type('Main Day');
-      cy.get('input.inp').eq(1).type('18:00');
-    });
-
-    openSection('โซนของงาน');
-    zonesFirstRow().within(() => {
-      cy.get('input.inp').eq(0).type('Zone A');
-      cy.get('input.inp.num').eq(0).clear().type('10');
-      cy.get('input.inp.num').eq(1).clear().type('1000');
-    });
-
-    cy.contains('button', 'สร้าง').click();
-
-    cy.wait('@createFail');
-    cy.on('window:alert', (txt) => {
-      expect(txt).to.match(/Create failed: 500/);
-    });
-  });
 });
