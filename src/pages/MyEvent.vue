@@ -1,3 +1,4 @@
+
 <!-- EventCardSection.vue -->
 <template>
   <section class="event-section">
@@ -9,6 +10,59 @@
       </svg>
       <h1 >My Event Tickets</h1>
     </div>
+
+    <!-- ===== Ticket Popup (Modal) ===== -->
+<!-- ===== Ticket Popup (Modal) ===== -->
+<div v-if="showTicket" class="modal-backdrop" @click.self="closeTicket">
+  <div class="ticket-modal">
+    <div class="ticket-card">
+      <!-- Header -->
+      <div class="ticket-head">
+        <img class="brand-logo" :src="logoUrl" alt="JoinUp" />
+        <button class="close-x" @click="closeTicket" aria-label="Close">×</button>
+      </div>
+      <div class="divider"></div>
+      <p class="hint">Please show it when you arrive at the venue</p>
+
+      <!-- QR Placeholder ตายตัว ไม่ต้องโหลดรูป -->
+      <div class="qr qr-fallback">QR</div>
+
+      <!-- Details -->
+      <div class="details">
+        <div class="row">
+          <span class="label red">Event Name</span>
+          <div class="value name">{{ activeTicket?.eventName || 'Event' }}</div>
+        </div>
+
+        <div class="row grid3">
+          <div class="cell">
+            <span class="label">Event Time</span>
+            <div class="value">{{ activeTicket?.timeRange || '-' }}</div>
+          </div>
+          <div class="cell">
+            <span class="label">Zone</span>
+            <div class="value">{{ activeTicket?.zone || '-' }}</div>
+          </div>
+          <div class="cell">
+            <span class="label red">Ticket ID</span>
+            <div class="value">{{ activeTicket?.ticketCode || activeTicket?.id || '-' }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dots สำหรับหลายรอบ -->
+      <div v-if="tickets.length > 1" class="dots">
+        <button
+          v-for="(t,i) in tickets"
+          :key="t.id || i"
+          :class="['dot', {active: i === activeIdx}]"
+          @click="goTicket(i)"
+        />
+      </div>
+    </div>
+</div>
+</div>
+
 
     <!-- Profile -->
     <div class="profile-box">
@@ -38,21 +92,11 @@
           <p class="date">{{ formatDate(event.date) }}</p>
           <h3 class="event-title">{{ event.title }}</h3>
           <p class="location">{{ event.location }}</p>
-<p class="round" style="margin:4px 0 6px; color:#ED3F27; font-weight:700;">
-  {{ event.roundLabel }}
-</p>
+          <button class="view-btn" @click="openTicketModal(event.registrationId)">
+  <i class="fa-solid fa-qrcode"></i>
+  <span>View Ticket</span>
+</button>
 
-<p v-if="event.zoneName" class="zone" style="margin: 0 0 6px; color:#111827;">
-  โซน: <strong>{{ event.zoneName }}</strong>   <!-- ✅ โชว์โซน -->
-</p>
-
-<p class="qty" style="margin: 0 0 12px; color:#374151;">
-  จำนวนที่นั่ง: <strong>{{ event.quantity }}</strong>
-</p>
-
-          <!-- <button class="view-btn" @click="viewTicket(event.registrationId)">
-            <i class="fa-solid fa-ticket"></i><span>View Ticket</span>
-          </button> -->
         </div>
       </article>
 
@@ -62,14 +106,40 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted ,onUnmounted} from 'vue'
 import axios from 'axios'
 import api from '@/lib/api' // สำหรับ /registrations/me
+const logoUrl = new URL('../assets/logo.png', import.meta.url).href
 
+const regMap = new Map()
 const user = ref({ name: '', email: '' })
 const cards = ref([])
 const loading = ref(true)
 const error = ref(null)
+
+function deepFindZoneLikeValue(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 3) return null
+  const ZONE_KEYS = /(zone|section|block|area|row|seat|category)/i
+
+  // 1) ตรงๆจากชั้นปัจจุบัน
+  for (const [k, v] of Object.entries(obj)) {
+    if (!ZONE_KEYS.test(k)) continue
+    if (v == null) continue
+    if (typeof v === 'string' && v.trim()) return v
+    if (typeof v === 'number') return String(v)
+    if (typeof v === 'object') {
+      // เผื่อเจอ { name: 'VIP' }
+      if (typeof v.name === 'string' && v.name.trim()) return v.name
+    }
+  }
+  // 2) ไล่ลงไปชั้นลูก (ลึกสุด ~3 ชั้น)
+  for (const v of Object.values(obj)) {
+    const got = deepFindZoneLikeValue(v, depth + 1)
+    if (got) return got
+  }
+  return null
+}
+
 
 function getToken() {
   const keys = ['access_token', 'accessToken', 'jwt', 'token']
@@ -146,39 +216,88 @@ function imageCandidatesFromEvent(ev, eventId) {
 function resolveDate(ev, reg) {
   return ev?.startAt || ev?.start_at || ev?.start_time || ev?.date || reg?.registeredAt || null
 }
-function toTimeLabel(t){ return String(t||'').slice(0,5) }
-function toDateLabel(iso){
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('th-TH', {
-    weekday:'short', day:'2-digit', month:'short', year:'numeric'
-  })
+
+function getCachedPlan(eventId) {
+  try {
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i)
+      if (!k || !/^plan:/.test(k)) continue
+      const raw = sessionStorage.getItem(k)
+      if (!raw) continue
+      const obj = JSON.parse(raw)
+      const id = String(obj?.id ?? obj?.eventId ?? obj?.event?.id ?? '')
+      if (String(eventId) === id) return obj
+    }
+  } catch {}
+  return null
 }
-function makeShowLabel(dateOrIso, timeStr){
-  if (dateOrIso && !timeStr && !isNaN(Date.parse(dateOrIso))) {
-    const d = new Date(dateOrIso)
-    const hh = String(d.getHours()).padStart(2,'0')
-    const mm = String(d.getMinutes()).padStart(2,'0')
-    return `${toDateLabel(d.toISOString())} ${toTimeLabel(`${hh}:${mm}`)}`
+
+function findZoneNameById(plan, zoneId) {
+  if (!plan || zoneId == null) return null
+  const zid = String(zoneId)
+
+  // 1) แม่แบบโครงสร้างยอดฮิต: [{ id, name }] หรือ [{ zoneId, name }] หรือ code เป็นรหัส
+  const hit = plan?.zones?.find(
+    z => String(z.id) === zid || String(z.zoneId) === zid || String(z.code) === zid
+  )
+  if (hit?.name) return hit.name
+
+  // 2) บางโปรเจ็กต์เก็บเป็น map
+  const map = plan?.seatMap?.zones || plan?.zonesMap
+  if (map && typeof map === 'object') {
+    const z = map[zid]
+    if (z?.name) return z.name
   }
-  return `${toDateLabel(dateOrIso)} ${toTimeLabel(timeStr)}`
+  return null
 }
 
-/** หาชื่อรอบจาก ev.sessions โดยใช้ reg.sessionId ถ้ามี; fallback ชื่อ/เวลาแรกของอีเวนต์ */
-function resolveRoundLabel(ev, reg){
-  const sessions = Array.isArray(ev?.sessions) ? ev.sessions : []
-  if (sessions.length === 0) return 'รอบ: TBA'
+// ดึงชื่อโซนจาก registration (รองรับซ้อนชั้น + zoneId → ไปแมปชื่อ)
+function resolveZoneFromReg(reg, ev) {
+  // 1) ชุด flat ที่คาดหวัง
+  const flat =
+    reg?.seatZoneName || reg?.zoneName || reg?.zone ||
+    reg?.seatZone || reg?.seat_zone || reg?.section ||
+    reg?.block || reg?.area || reg?.row || reg?.seat
+  if (flat) return flat
 
-  let s = null
-  if (reg?.sessionId != null) {
-    s = sessions.find(x => String(x.id) === String(reg.sessionId))
+  // 2) ชุด nested ฮิตๆ
+  const nested =
+    reg?.seat?.zoneName || reg?.seat?.zone || reg?.seat?.section ||
+    reg?.seatInfo?.zoneName || reg?.seat_info?.zone_name
+  if (nested) return nested
+
+  // 3) บางระบบใช้ประเภทตั๋ว/หมวดเป็นโซน
+  const byCategory =
+    reg?.ticketTypeName || reg?.ticket_type_name ||
+    reg?.ticketType?.name || reg?.ticket?.typeName ||
+    reg?.categoryName || reg?.category?.name ||
+    reg?.ticketCategory || reg?.category
+  if (byCategory) return byCategory
+
+  // 4) zoneId → map กับ plan cache หรือ ev.zones[]
+  const zoneId =
+    reg?.zoneId || reg?.seatZoneId || reg?.seat_zone_id || reg?.seat?.zoneId
+  if (zoneId != null) {
+    const plan = getCachedPlan(ev?.id ?? reg?.eventId)
+    const name = findZoneNameById(plan, zoneId)
+    if (name) return name
+    // เผื่อ BE ใส่ zones มาตรง event
+    const hit = ev?.zones?.find?.(z =>
+      String(z.id) === String(zoneId) ||
+      String(z.zoneId) === String(zoneId) ||
+      String(z.code) === String(zoneId)
+    )
+    if (hit?.name) return hit.name
   }
-  if (!s) s = sessions[0]
 
-  const d = ev.startDate || ev.start_date || s.startDate || s.start_date
-  const t = s.startTime || s.start_time
-  const name = s.name || null
-  return `รอบ: ${name || makeShowLabel(d, t)}`
+  // 5) ท่ายึดโลก: ค้นหากว้างๆใน reg เผื่อเก็บไว้ใน metadata/detail อื่นๆ
+  const deep = deepFindZoneLikeValue(reg)
+  if (deep) return deep
+
+  return null
 }
+
+
 
 onMounted(async () => {
   try {
@@ -189,9 +308,11 @@ onMounted(async () => {
     const { data: regs } = await api.get('/registrations/me', {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
+    regMap.clear()
+for (const r of regs) regMap.set(String(r.id), r)
+
     if (!Array.isArray(regs) || regs.length === 0) {
       cards.value = []
-      
       return
     }
 
@@ -210,25 +331,37 @@ onMounted(async () => {
     )
 
     // 3) ประกอบการ์ด (รวมทั้งหมดยิงเป็น “ประวัติบัตร” รายการเดียว)
-    cards.value = regs.map(r => {
-      const ev = eventMap.get(r.eventId) || {}
-      const candidates = imageCandidatesFromEvent(ev, r.eventId)
-      return {
-        registrationId: r.id,
-        id: r.eventId,
-        title: ev.title || ev.name || `Event #${r.eventId}`,
-        date: resolveDate(ev, r),
-        location: ev.location || ev.venue?.name || ev.venue || ev.city || 'TBA',
-        quantity: Number(r.quantity ?? 1),
-    roundLabel: resolveRoundLabel(ev, r),
-        registrationStatus: r.registrationStatus,
-        paymentStatus: r.paymentStatus,
-        zoneName: r.zoneName || '',
-        _imgCandidates: candidates,
-        _imgIdx: 0,
-        currentImage: candidates[0] || '',
-      }
-    })
+    // ตอนประกอบ cards.value = regs.map(...)
+// ตอนสร้างการ์ด (เดิมคุณมีแล้ว เพิ่ม mapping เผื่อ ๆ)
+cards.value = regs.map(r => {
+  const ev = eventMap.get(r.eventId) || {}
+  const candidates = imageCandidatesFromEvent(ev, r.eventId)
+  const z =
+   resolveZoneFromReg(r, ev) ||
+  r.seatZoneName || r.zoneName || r.zone ||
+ r.seatZone || r.seat_zone || r.section || r.block || r.area || r.row || r.seat || null
+  return {
+    registrationId: r.id,
+    id: r.eventId,
+    title: ev.title || ev.name || `Event #${r.eventId}`,
+    date: resolveDate(ev, r),
+    location: ev.location || ev.venue?.name || ev.venue || ev.city || 'TBA',
+    registrationStatus: r.registrationStatus,
+    paymentStatus: r.paymentStatus,
+
+    // fallback ที่ใช้กับตั๋ว
+    fallbackStart:
+      ev.startAt || ev.start_at || ev.start_time || ev.startDateTime || ev.start || r.startTime || r.start_time || r.doorTime,
+    fallbackEnd:
+      ev.endAt || ev.end_at || ev.end_time || ev.endDateTime || ev.end || r.endTime || r.end_time,
+    fallbackZone: z, 
+    _imgCandidates: candidates,
+    _imgIdx: 0,
+    currentImage: candidates[0] || '',
+  }
+})
+
+
   } catch (e) {
     console.error('load my registrations with images failed:', e)
     error.value = 'โหลดรายการตั๋วไม่สำเร็จ'
@@ -269,11 +402,206 @@ function formatDate(dateStr) {
   })
 }
 
+// === Ticket Modal State ===
+const showTicket = ref(false)
+const loadingTicket = ref(false)
+const tickets = ref([])          // ใบตั๋วทั้งหมดใน registration (รองรับหลายรอบ)
+const activeIdx = ref(0)
+const activeTicket = computed(() => tickets.value[activeIdx.value])
 
-
-function viewTicket(registrationId) {
-  window.location.href = `/my-ticket/${registrationId}`
+function closeTicket() {
+  showTicket.value = false
+  tickets.value = []
+  activeIdx.value = 0
+  loadingTicket.value = false
 }
+
+function goTicket(i) {
+  if (i >= 0 && i < tickets.value.length) activeIdx.value = i
+}
+function nextTicket() {
+  activeIdx.value = (activeIdx.value + 1) % tickets.value.length
+}
+function prevTicket() {
+  activeIdx.value = (activeIdx.value - 1 + tickets.value.length) % tickets.value.length
+}
+
+// map field ให้เป็นมาตรฐานเดียว
+function normalizeTicket(raw, fb) {
+  const eventName =
+    raw.eventName || raw.event_title || raw.event || fb?.title || fb?.name
+
+  const zone =
+    raw.zone || raw.zoneName || raw.seatZone || raw.seat_zone ||
+    raw.seatZoneName || raw.section || raw.block ||
+    raw.area || raw.row || raw.seat || fb?.fallbackZone
+
+  const ticketCode =
+    raw.ticketCode || raw.ticket_id || raw.code || raw.ticketNo || raw.ticket_no || raw.id
+
+  // เวลา: รองรับคีย์หลากหลาย
+  const start =
+    raw.startTime || raw.start_time || raw.doorTime || raw.time_start ||
+    raw.startAt   || raw.start_at   || raw.time || raw.start_date || fb?.fallbackStart
+
+  const end =
+    raw.endTime || raw.end_time || raw.time_end ||
+    raw.endAt   || raw.end_at   || raw.end_date || fb?.fallbackEnd
+
+  return {
+    id: ticketCode || cryptoRandom(),
+    eventName,
+    zone,
+    ticketCode,
+    timeRange: buildTimeRange(start, end),
+    qrUrl: null
+  }
+}
+
+
+
+function buildTimeRange(start, end) {
+  const isPureTime = v => typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v)
+
+  // ถ้าเป็นเวลาอย่างเดียว
+  if (isPureTime(start) || isPureTime(end)) {
+    if (start && end) return `${start} - ${end}`
+    return start || end || null
+  }
+
+  const parse = (v) => {
+    if (!v && v !== 0) return null
+    // epoch number หรือ string ที่เป็นตัวเลข
+    if (typeof v === 'number' || (/^\d+$/.test(String(v)))) {
+      const d = new Date(Number(v))
+      return isNaN(d) ? null : d
+    }
+    if (typeof v === 'string') {
+      let s = v.trim()
+      // 'YYYY-MM-DD HH:mm' -> 'YYYY-MM-DDTHH:mm'
+      if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(s)) {
+        s = s.replace(/\s+/, 'T')
+      }
+      const d = new Date(s)
+      return isNaN(d) ? null : d
+    }
+    const d = new Date(v)
+    return isNaN(d) ? null : d
+  }
+
+  const s = parse(start), e = parse(end)
+  const fmt = (d) =>
+    d?.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) || null
+
+  const fs = fmt(s), fe = fmt(e)
+  if (fs && fe) return `${fs} - ${fe}`
+  return fs || fe || null
+}
+
+
+
+function cryptoRandom() {
+  try { return crypto.getRandomValues(new Uint32Array(1))[0].toString(16) }
+  catch { return String(Date.now()) }
+}
+
+// ดึงตั๋วตาม registrationId (ลองได้หลาย endpoint)
+async function fetchTicketsByRegistration(registrationId) {
+  const token = getToken()
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+  // 1) รายละเอียด registration (เผื่อ embed tickets)
+  try {
+    const { data } = await axios.get(`/api/registrations/${registrationId}`, { headers })
+    if (Array.isArray(data?.tickets) && data.tickets.length) return { tickets: data.tickets }
+  } catch (e) {
+       if (e?.response?.status !== 404) console.warn('reg detail error', e?.response?.status)}
+
+  // 2) endpoint เฉพาะ tickets
+  const candidates = [
+   `/api/registrations/${registrationId}/tickets`,
+  `/api/tickets?registrationId=${registrationId}`,
+   `/api/tickets/of/${registrationId}`,
+   `/api/registration/${registrationId}/tickets`, // เผื่อสะกดอีกแบบใน BE
+   `/api/ticket/of/${registrationId}`
+ ]
+  for (const url of candidates) {
+    try {
+      const { data } = await axios.get(url, { headers })
+      if (data && (Array.isArray(data) || Array.isArray(data?.items) || Array.isArray(data?.tickets))) {
+        return { tickets: Array.isArray(data) ? data : (data.items || data.tickets) }
+      }
+    } catch (e) {
+if (e?.response?.status !== 404) console.warn('ticket url error', url, e?.response?.status)
+    }
+  }
+  return { tickets: [] }
+}
+
+async function openTicketModal(registrationId) {
+  
+  showTicket.value = true
+  loadingTicket.value = true
+  activeIdx.value = 0
+  tickets.value = []
+
+  try {
+  // ใน openTicketModal()
+const card = cards.value.find(c => String(c.registrationId) === String(registrationId))
+const reg  = regMap.get(String(registrationId)) || regMap.get(+registrationId) || null
+
+const fb = card ? {
+  title: card.title,
+  // ถ้าไม่มีเวลา ใช้ date ของการ์ดเป็นที่มา (บางระบบเก็บเวลารวมใน date)
+  fallbackStart: card.fallbackStart || reg?.startTime || reg?.start_time || reg?.doorTime || reg?.startAt || reg?.start_at || card?.date,
+  fallbackEnd:   card.fallbackEnd   || reg?.endTime   || reg?.end_time   || reg?.endAt   || reg?.end_at   || null,
+  fallbackZone:  card.fallbackZone ||
+              reg?.seatZoneName || reg?.zoneName || reg?.zone ||
+               reg?.seatZone || reg?.seat_zone || reg?.section || reg?.block || reg?.area || reg?.row || reg?.seat || null
+} : null
+
+
+
+    const payload = await fetchTicketsByRegistration(registrationId)
+    const raws = Array.isArray(payload?.tickets) ? payload.tickets : []
+
+    const normalized = raws.map(r => normalizeTicket(r, fb))
+
+    if (!normalized.length && fb) {
+      normalized.push({
+        id: registrationId,
+        eventName: fb.title,
+        zone: fb.fallbackZone || '-',
+        ticketCode: registrationId,
+        timeRange: buildTimeRange(fb.fallbackStart, fb.fallbackEnd),
+        qrUrl: null
+      })
+    }
+
+    tickets.value = normalized
+  } catch (e) {
+    console.error('load tickets failed:', e)
+    tickets.value = []
+  } finally {
+    loadingTicket.value = false
+  }
+}
+
+
+// keyboard shortcut (Esc/Left/Right)
+onMounted(() => {
+  const onKey = (e) => {
+    if (!showTicket.value) return
+    if (e.key === 'Escape') closeTicket()
+    if (e.key === 'ArrowLeft' && tickets.value.length > 1) prevTicket()
+    if (e.key === 'ArrowRight' && tickets.value.length > 1) nextTicket()
+  }
+  window.addEventListener('keydown', onKey)
+  onUnmounted(() => window.removeEventListener('keydown', onKey))
+})
+// function viewTicket(registrationId) {
+//   window.location.href = `/my-ticket/${registrationId}`
+// }
 
 
 
@@ -349,6 +677,69 @@ if (cached) {
   --accent:#ff6a00;
   --surface:#fff;
 }
+.brand-logo{ height:25px; width:auto; }
+
+/* ===== Modal base ===== */
+/* ===== Popup card style (แบบภาพที่ 2) ===== */
+/* ===== Popup card style ===== */
+.modal-backdrop{
+  position: fixed; inset:0;
+  background: rgba(0,0,0,.82);
+  display:grid; place-items:center;
+  z-index:9999;
+}
+.ticket-modal{ position:relative; width: 330px; max-width: 92vw; }
+
+.ticket-card{
+  position:relative;
+  background:#fff;
+  border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.35);
+  padding: 10px 12px 12px;
+}
+
+.ticket-head{ display:flex; align-items:center; justify-content:space-between; }
+.brand-text{ font-weight:900; color:#ef4444; font-size:18px; }
+.close-x{ border:0; background:transparent; color:#2563eb; font-size:24px; line-height:1; cursor:pointer; }
+
+.divider{ height:1px; background:#E5E7EB; margin:8px 0 6px; }
+.hint{ text-align:center; color:#6b7280; font-size:11px; margin:0 0 8px; }
+
+/* QR placeholder */
+.qr{
+  display:block;
+  width:210px; height:210px;
+  margin:0 auto 10px;
+  object-fit:contain;
+  border-radius:6px;
+}
+.qr-fallback{
+  display:flex; align-items:center; justify-content:center;
+  background:#f5f7fa; color:#9aa3ad; font-weight:800;
+  border:1px dashed #d1d5db;
+}
+
+.details{ padding:4px 4px 0; }
+.row{ margin-bottom:8px; }
+.row.grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+.label{ display:block; font-size:11px; color:#6b7280; font-weight:700; margin-bottom:2px; }
+.label.red{ color:#ef4444; }
+.value{ font-size:13px; color:#111827; font-weight:800; }
+.value.name{ font-size:13px; }
+
+.dots{ display:flex; justify-content:center; gap:8px; margin-top:8px; }
+.dot{ width:8px; height:8px; border-radius:999px; background:#cbd5e1; border:0; cursor:pointer; }
+.dot.active{ background:#111827; }
+
+.nav{ display:flex; justify-content:space-between; margin-top:6px; }
+.nav button{ background:#111827; color:#fff; border:0; width:40px; height:28px; border-radius:6px; cursor:pointer; }
+
+@media (max-width:380px){
+  .ticket-modal{ width:310px; }
+  .qr{ width:200px; height:200px; }
+}
+
+
 
 .event-section{max-width:920px;margin:0 auto;padding:24px 20px 56px;}
 .title-row{display:flex;align-items:center;gap:10px;width:fit-content;padding:10px 14px;border:3px solid var(--brand-blue);border-radius:4px;margin-bottom:5px;}
@@ -365,10 +756,41 @@ if (cached) {
 .event-card{display:grid;grid-template-columns:120px 1fr;gap:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px;box-shadow:0 1px 0 rgba(0,0,0,.05);}
 .poster{width:120px;height:160px;object-fit:cover;border-radius:10px;border:1px solid #ddd;}
 .event-info .date{font:600 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#525252;margin-bottom:6px;}
-.event-title{font-size:18px;font-weight:900;color:var(--text);margin:2px 0 6px;margin-bottom: -10px;}
-.location{color:#374151;margin-bottom:0px;}
-.view-btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer;}
-.view-btn i{font-size:14px;}
+.event-title{font-size:22px;font-weight:900;color:var(--text);margin:2px 0 6px;}
+.location{color:#374151;margin-bottom:12px;}
+.view-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+
+  /* ขนาด & ฟอนต์ */
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1;
+
+  /* สี & รูปทรง */
+  background:#ff6a00;        /* ส้มแบบภาพ */
+  color:#fff;
+  border:0;
+  border-radius: 9999px;      /* pill */
+  padding: 10px 20px;
+
+  /* เอฟเฟกต์ */
+  box-shadow: 0 6px 12px rgba(255,106,0,.25);
+  cursor:pointer;
+  transition: transform .05s ease, box-shadow .15s ease, background .15s ease;
+}
+
+.view-btn i{
+  font-size: 20px;            /* ไอคอนใหญ่กำลังดี */
+  line-height: 1;
+}
+
+/* hover/active/focus ให้มืออาชีพ */
+.view-btn:hover{ background:#ff730f; box-shadow:0 8px 16px rgba(255,106,0,.33); }
+.view-btn:active{ transform: translateY(1px); box-shadow:0 4px 8px rgba(255,106,0,.28); }
+.view-btn:focus-visible{ outline:2px solid #fff; outline-offset:3px; }
+
 .empty{text-align:center;color:#98a2b3;margin-top:28px;}
 
 @media (max-width:640px){
