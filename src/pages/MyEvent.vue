@@ -302,12 +302,24 @@ function resolveZoneFromReg(reg, ev) {
 onMounted(async () => {
   try {
     initUser()
-    const token = getToken()
-
     // 1) รายการที่ผู้ใช้จอง
-    const { data: regs } = await api.get('/registrations/me', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
+const token = getToken()
+const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+// ดึง email จาก state/cache
+const cachedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const emailParam = user.value?.email || cachedUser?.email
+if (!emailParam) {
+  error.value = 'ไม่พบอีเมลผู้ใช้ (กรุณาเข้าสู่ระบบก่อน)'
+  loading.value = false
+  return
+}
+
+const { data: regs } = await api.get('/registrations/me', {
+  params: { email: emailParam },   // 🔴 เพิ่มอันนี้
+  headers
+})
+
     regMap.clear()
 for (const r of regs) regMap.set(String(r.id), r)
 
