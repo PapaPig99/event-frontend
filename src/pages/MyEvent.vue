@@ -1,72 +1,71 @@
-
 <!-- EventCardSection.vue -->
 <template>
   <section class="event-section">
     <!-- Title -->
     <div class="title-row" style="margin-bottom: -50px;">
       <svg class="title-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zm14-1h2a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-2"
-          fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path
+          d="M3 7a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7zm14-1h2a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-2"
+          fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
-      <h1 >My Event Tickets</h1>
+      <h1>My Event Tickets</h1>
     </div>
 
     <!-- ===== Ticket Popup (Modal) ===== -->
-<!-- ===== Ticket Popup (Modal) ===== -->
-<div v-if="showTicket" class="modal-backdrop" @click.self="closeTicket">
-  <div class="ticket-modal">
-    <div class="ticket-card">
-      <!-- Header -->
-      <div class="ticket-head">
-        <img class="brand-logo" :src="logoUrl" alt="JoinUp" />
-        <button class="close-x" @click="closeTicket" aria-label="Close">×</button>
-      </div>
-      <div class="divider"></div>
-      <p class="hint">Please show it when you arrive at the venue</p>
+    <div v-if="showTicket" class="modal-backdrop" @click.self="closeTicket">
+      <div class="ticket-modal">
+        <div class="ticket-card">
+          <!-- Header -->
+          <div class="ticket-head">
+            <img class="brand-logo" :src="logoUrl" alt="JoinUp" />
+            <button class="close-x" @click="closeTicket" aria-label="Close">×</button>
+          </div>
+          <div class="divider"></div>
+          <p class="hint">Please show it when you arrive at the venue</p>
 
-      <!-- QR Placeholder ตายตัว ไม่ต้องโหลดรูป -->
-      <div class="qr qr-fallback">QR</div>
+          <!-- QR Placeholder ตายตัว ไม่ต้องโหลดรูป -->
+          <div class="qr qr-fallback">QR</div>
 
-      <!-- Details -->
-      <div class="details">
-        <div class="row">
-          <span class="label red">Event Name</span>
-          <div class="value name">{{ activeTicket?.eventName || 'Event' }}</div>
+          <!-- Details -->
+          <div class="details">
+            <div class="row">
+              <span class="label red">Event Name</span>
+              <div class="value name">{{ activeTicket?.eventName || 'Event' }}</div>
+            </div>
+
+            <div class="row grid3">
+              <div class="cell">
+                <span class="label">Event Time</span>
+                <div class="value">{{ activeTicket?.timeRange || '-' }}</div>
+              </div>
+              <div class="cell">
+                <span class="label">Zone</span>
+                <div class="value">{{ activeTicket?.zone || '-' }}</div>
+              </div>
+              <div class="cell">
+                <span class="label red">Ticket ID</span>
+                <div class="value">{{ activeTicket?.ticketID || activeTicket?.id || '-' }}</div>
+              </div>
+              <div class="cell">
+                <span class="label red">Ticket Code</span>
+                <div class="value">{{ activeTicket?.ticketCode || '-' }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dots สำหรับหลายรอบ -->
+          <div v-if="tickets.length > 1" class="dots">
+            <button v-for="(t, i) in tickets" :key="t.id || i" :class="['dot', { active: i === activeIdx }]"
+              @click="goTicket(i)" />
+          </div>
         </div>
-
-        <div class="row grid3">
-          <div class="cell">
-            <span class="label">Event Time</span>
-            <div class="value">{{ activeTicket?.timeRange || '-' }}</div>
-          </div>
-          <div class="cell">
-            <span class="label">Zone</span>
-            <div class="value">{{ activeTicket?.zone || '-' }}</div>
-          </div>
-          <div class="cell">
-            <span class="label red">Ticket ID</span>
-            <div class="value">{{ activeTicket?.ticketCode || activeTicket?.id || '-' }}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Dots สำหรับหลายรอบ -->
-      <div v-if="tickets.length > 1" class="dots">
-        <button
-          v-for="(t,i) in tickets"
-          :key="t.id || i"
-          :class="['dot', {active: i === activeIdx}]"
-          @click="goTicket(i)"
-        />
       </div>
     </div>
-</div>
-</div>
 
 
     <!-- Profile -->
     <div class="profile-box">
-      
+
       <i class="fa-solid fa-user avatar"></i>
       <div class="info">
         <p class="name" style="margin-bottom: 0px;">{{ user.name }}</p>
@@ -80,22 +79,17 @@
 
     <div class="event-list">
       <article v-for="event in allEvents" :key="event.registrationId" class="event-card">
-        <img
-          v-if="event.currentImage"
-          :src="event.currentImage"
-          alt="Event Poster"
-          class="poster"
-          @error="onImgError(event)"
-        />
+        <img v-if="event.currentImage" :src="event.currentImage" alt="Event Poster" class="poster"
+          @error="onImgError(event)" />
 
         <div class="event-info">
           <p class="date">{{ formatDate(event.date) }}</p>
           <h3 class="event-title">{{ event.title }}</h3>
           <p class="location">{{ event.location }}</p>
           <button class="view-btn" @click="openTicketModal(event.registrationId)">
-  <i class="fa-solid fa-qrcode"></i>
-  <span>View Ticket</span>
-</button>
+            <i class="fa-solid fa-qrcode"></i>
+            <span>View Ticket</span>
+          </button>
 
         </div>
       </article>
@@ -106,7 +100,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted ,onUnmounted} from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import axios from 'axios'
 import api from '@/lib/api' // สำหรับ /registrations/me
 const logoUrl = new URL('../assets/logo.png', import.meta.url).href
@@ -174,7 +168,7 @@ function getCachedPoster(eventId) {
         )
       }
     }
-  } catch {}
+  } catch { }
   return null
 }
 
@@ -228,7 +222,7 @@ function getCachedPlan(eventId) {
       const id = String(obj?.id ?? obj?.eventId ?? obj?.event?.id ?? '')
       if (String(eventId) === id) return obj
     }
-  } catch {}
+  } catch { }
   return null
 }
 
@@ -303,25 +297,25 @@ onMounted(async () => {
   try {
     initUser()
     // 1) รายการที่ผู้ใช้จอง
-const token = getToken()
-const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const token = getToken()
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
 
-// ดึง email จาก state/cache
-const cachedUser = JSON.parse(localStorage.getItem('user') || '{}')
-const emailParam = user.value?.email || cachedUser?.email
-if (!emailParam) {
-  error.value = 'ไม่พบอีเมลผู้ใช้ (กรุณาเข้าสู่ระบบก่อน)'
-  loading.value = false
-  return
-}
+    // ดึง email จาก state/cache
+    const cachedUser = JSON.parse(localStorage.getItem('user') || '{}')
+    const emailParam = user.value?.email || cachedUser?.email
+    if (!emailParam) {
+      error.value = 'ไม่พบอีเมลผู้ใช้ (กรุณาเข้าสู่ระบบก่อน)'
+      loading.value = false
+      return
+    }
 
-const { data: regs } = await api.get('/registrations/me', {
-  params: { email: emailParam },   // 🔴 เพิ่มอันนี้
-  headers
-})
+    const { data: regs } = await api.get('/registrations/me', {
+      params: { email: emailParam },   // 🔴 เพิ่มอันนี้
+      headers
+    })
 
     regMap.clear()
-for (const r of regs) regMap.set(String(r.id), r)
+    for (const r of regs) regMap.set(String(r.id), r)
 
     if (!Array.isArray(regs) || regs.length === 0) {
       cards.value = []
@@ -339,39 +333,42 @@ for (const r of regs) regMap.set(String(r.id), r)
         } catch (e) {
           console.warn('GET /api/events/' + id + ' failed:', e?.response?.status || e)
         }
+
       })
+
     )
 
-    // 3) ประกอบการ์ด (รวมทั้งหมดยิงเป็น “ประวัติบัตร” รายการเดียว)
-    // ตอนประกอบ cards.value = regs.map(...)
-// ตอนสร้างการ์ด (เดิมคุณมีแล้ว เพิ่ม mapping เผื่อ ๆ)
-cards.value = regs.map(r => {
-  const ev = eventMap.get(r.eventId) || {}
-  const candidates = imageCandidatesFromEvent(ev, r.eventId)
-  const z =
-   resolveZoneFromReg(r, ev) ||
-  r.seatZoneName || r.zoneName || r.zone ||
- r.seatZone || r.seat_zone || r.section || r.block || r.area || r.row || r.seat || null
-  return {
-    registrationId: r.id,
-    id: r.eventId,
-    title: ev.title || ev.name || `Event #${r.eventId}`,
-    date: resolveDate(ev, r),
-    location: ev.location || ev.venue?.name || ev.venue || ev.city || 'TBA',
-    registrationStatus: r.registrationStatus,
-    paymentStatus: r.paymentStatus,
+    // 3) ประกอบการ์ด 
+    cards.value = regs.map(r => {
+      const ev = eventMap.get(r.eventId) || {}
+      const allSessions = ev.eventSessions || ev.sessions || []
+      const session = allSessions.find(s =>
+        String(s.id) === String(r.sessionId) ||
+        String(s.id) === String(r.session_id)
+      ) || {}
+      const candidates = imageCandidatesFromEvent(ev, r.eventId)
+      const z = resolveZoneFromReg(r, ev)
 
-    // fallback ที่ใช้กับตั๋ว
-    fallbackStart:
-      ev.startAt || ev.start_at || ev.start_time || ev.startDateTime || ev.start || r.startTime || r.start_time || r.doorTime,
-    fallbackEnd:
-      ev.endAt || ev.end_at || ev.end_time || ev.endDateTime || ev.end || r.endTime || r.end_time,
-    fallbackZone: z, 
-    _imgCandidates: candidates,
-    _imgIdx: 0,
-    currentImage: candidates[0] || '',
-  }
-})
+      return {
+        registrationId: r.id,
+        id: r.eventId,
+        title: ev.title || ev.name || `Event #${r.eventId}`,
+        date: resolveDate(ev, r),
+        location: ev.location || ev.venue?.name || ev.city || 'TBA',
+        paymentStatus: r.paymentStatus,
+        paymentReference: r.paymentReference || null,
+        ticketCode: r.ticketCode || r.ticket_code || null,
+        fallbackStart:
+          session?.startTime || session?.start_time ||
+          session?.eventStartTime || session?.event_start_time ||
+          ev.startAt || ev.start_at || r.startTime || r.start_time,
+        fallbackZone: z,
+        _imgCandidates: candidates,
+        _imgIdx: 0,
+        currentImage: candidates[0] || ''
+      }
+    })
+
 
 
   } catch (e) {
@@ -438,59 +435,33 @@ function prevTicket() {
   activeIdx.value = (activeIdx.value - 1 + tickets.value.length) % tickets.value.length
 }
 
-// map field ให้เป็นมาตรฐานเดียว
-function normalizeTicket(raw, fb) {
-  const eventName =
-    raw.eventName || raw.event_title || raw.event || fb?.title || fb?.name
-
-  const zone =
-    raw.zone || raw.zoneName || raw.seatZone || raw.seat_zone ||
-    raw.seatZoneName || raw.section || raw.block ||
-    raw.area || raw.row || raw.seat || fb?.fallbackZone
-
-  const ticketCode =
-    raw.ticketCode || raw.ticket_id || raw.code || raw.ticketNo || raw.ticket_no || raw.id
-
-  // เวลา: รองรับคีย์หลากหลาย
-  const start =
-    raw.startTime || raw.start_time || raw.doorTime || raw.time_start ||
-    raw.startAt   || raw.start_at   || raw.time || raw.start_date || fb?.fallbackStart
-
-  const end =
-    raw.endTime || raw.end_time || raw.time_end ||
-    raw.endAt   || raw.end_at   || raw.end_date || fb?.fallbackEnd
-
-  return {
-    id: ticketCode || cryptoRandom(),
-    eventName,
-    zone,
-    ticketCode,
-    timeRange: buildTimeRange(start, end),
-    qrUrl: null
-  }
-}
-
-
 
 function buildTimeRange(start, end) {
   const isPureTime = v => typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v)
 
-  // ถ้าเป็นเวลาอย่างเดียว
+  // ถ้าเป็นเวลาอย่างเดียว (เช่น "19:00:00" หรือ "07:30")
   if (isPureTime(start) || isPureTime(end)) {
-    if (start && end) return `${start} - ${end}`
-    return start || end || null
+    const fmt = (t) => {
+      if (!t) return ''
+      // 🔹 ตัดวินาทีออก เช่น "19:00:00" → "19:00"
+      const parts = t.split(':')
+      const hhmm = parts[0].padStart(2, '0') + ':' + parts[1].padStart(2, '0')
+      // 🔹 แปลงเป็นฟอร์แมตแบบไทย เช่น "19.00 น."
+      return hhmm.replace(':', '.') + ' น.'
+    }
+    if (start && end) return `${fmt(start)} - ${fmt(end)}`
+    return fmt(start || end)
   }
 
+  // 🔸 กรณีเป็นวันที่เต็ม (DateTime)
   const parse = (v) => {
     if (!v && v !== 0) return null
-    // epoch number หรือ string ที่เป็นตัวเลข
     if (typeof v === 'number' || (/^\d+$/.test(String(v)))) {
       const d = new Date(Number(v))
       return isNaN(d) ? null : d
     }
     if (typeof v === 'string') {
       let s = v.trim()
-      // 'YYYY-MM-DD HH:mm' -> 'YYYY-MM-DDTHH:mm'
       if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(s)) {
         s = s.replace(/\s+/, 'T')
       }
@@ -503,7 +474,11 @@ function buildTimeRange(start, end) {
 
   const s = parse(start), e = parse(end)
   const fmt = (d) =>
-    d?.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) || null
+    d?.toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Bangkok'
+    })?.replace(':', '.') + ' น.' || null
 
   const fs = fmt(s), fe = fmt(e)
   if (fs && fe) return `${fs} - ${fe}`
@@ -512,92 +487,29 @@ function buildTimeRange(start, end) {
 
 
 
+
 function cryptoRandom() {
   try { return crypto.getRandomValues(new Uint32Array(1))[0].toString(16) }
   catch { return String(Date.now()) }
 }
 
-// ดึงตั๋วตาม registrationId (ลองได้หลาย endpoint)
-async function fetchTicketsByRegistration(registrationId) {
-  const token = getToken()
-  const headers = token ? { Authorization: `Bearer ${token}` } : {}
 
-  // 1) รายละเอียด registration (เผื่อ embed tickets)
-  try {
-    const { data } = await axios.get(`/api/registrations/${registrationId}`, { headers })
-    if (Array.isArray(data?.tickets) && data.tickets.length) return { tickets: data.tickets }
-  } catch (e) {
-       if (e?.response?.status !== 404) console.warn('reg detail error', e?.response?.status)}
+function openTicketModal(registrationId) {
+  const found = cards.value.find(c => String(c.registrationId) === String(registrationId))
+  if (!found) return
 
-  // 2) endpoint เฉพาะ tickets
-  const candidates = [
-   `/api/registrations/${registrationId}/tickets`,
-  `/api/tickets?registrationId=${registrationId}`,
-   `/api/tickets/of/${registrationId}`,
-   `/api/registration/${registrationId}/tickets`, // เผื่อสะกดอีกแบบใน BE
-   `/api/ticket/of/${registrationId}`
- ]
-  for (const url of candidates) {
-    try {
-      const { data } = await axios.get(url, { headers })
-      if (data && (Array.isArray(data) || Array.isArray(data?.items) || Array.isArray(data?.tickets))) {
-        return { tickets: Array.isArray(data) ? data : (data.items || data.tickets) }
-      }
-    } catch (e) {
-if (e?.response?.status !== 404) console.warn('ticket url error', url, e?.response?.status)
-    }
-  }
-  return { tickets: [] }
-}
+  tickets.value = [{
+    id: registrationId,
+    eventName: found.title,
+    zone: found.fallbackZone || '-',
+    ticketID: found.registrationId,
+    ticketCode: found.ticketCode || found.paymentReference || found.registrationId,
+    timeRange: buildTimeRange(found.fallbackStart, found.fallbackEnd),
+  }]
 
-async function openTicketModal(registrationId) {
-  
   showTicket.value = true
-  loadingTicket.value = true
-  activeIdx.value = 0
-  tickets.value = []
-
-  try {
-  // ใน openTicketModal()
-const card = cards.value.find(c => String(c.registrationId) === String(registrationId))
-const reg  = regMap.get(String(registrationId)) || regMap.get(+registrationId) || null
-
-const fb = card ? {
-  title: card.title,
-  // ถ้าไม่มีเวลา ใช้ date ของการ์ดเป็นที่มา (บางระบบเก็บเวลารวมใน date)
-  fallbackStart: card.fallbackStart || reg?.startTime || reg?.start_time || reg?.doorTime || reg?.startAt || reg?.start_at || card?.date,
-  fallbackEnd:   card.fallbackEnd   || reg?.endTime   || reg?.end_time   || reg?.endAt   || reg?.end_at   || null,
-  fallbackZone:  card.fallbackZone ||
-              reg?.seatZoneName || reg?.zoneName || reg?.zone ||
-               reg?.seatZone || reg?.seat_zone || reg?.section || reg?.block || reg?.area || reg?.row || reg?.seat || null
-} : null
-
-
-
-    const payload = await fetchTicketsByRegistration(registrationId)
-    const raws = Array.isArray(payload?.tickets) ? payload.tickets : []
-
-    const normalized = raws.map(r => normalizeTicket(r, fb))
-
-    if (!normalized.length && fb) {
-      normalized.push({
-        id: registrationId,
-        eventName: fb.title,
-        zone: fb.fallbackZone || '-',
-        ticketCode: registrationId,
-        timeRange: buildTimeRange(fb.fallbackStart, fb.fallbackEnd),
-        qrUrl: null
-      })
-    }
-
-    tickets.value = normalized
-  } catch (e) {
-    console.error('load tickets failed:', e)
-    tickets.value = []
-  } finally {
-    loadingTicket.value = false
-  }
 }
+
 
 
 // keyboard shortcut (Esc/Left/Right)
@@ -614,9 +526,6 @@ onMounted(() => {
 // function viewTicket(registrationId) {
 //   window.location.href = `/my-ticket/${registrationId}`
 // }
-
-
-
 
 
 // --- วางเพิ่ม ---
@@ -641,19 +550,19 @@ function b64urlDecode(s) {
 function initUser() {
   // 1) ลองจาก localStorage.user ก่อน
   const cached = localStorage.getItem('user')
-if (cached) {
-  try {
-    const obj = JSON.parse(cached)
-    if (obj && (obj.name || obj.email)) {
-      const derivedName =
-        (obj.name && String(obj.name).trim()) ||
-        (obj.email ? obj.email.split('@')[0] : 'Guest')
-      user.value = { name: derivedName, email: obj.email || '-' }
-      localStorage.setItem('user', JSON.stringify(user.value)) // เขียนทับ cache เดิมที่ name ว่าง
-      return
-    }
-  } catch {}
-}
+  if (cached) {
+    try {
+      const obj = JSON.parse(cached)
+      if (obj && (obj.name || obj.email)) {
+        const derivedName =
+          (obj.name && String(obj.name).trim()) ||
+          (obj.email ? obj.email.split('@')[0] : 'Guest')
+        user.value = { name: derivedName, email: obj.email || '-' }
+        localStorage.setItem('user', JSON.stringify(user.value)) // เขียนทับ cache เดิมที่ name ว่าง
+        return
+      }
+    } catch { }
+  }
 
 
   // 2) ถ้าไม่มี → ถอดจาก JWT
@@ -681,99 +590,306 @@ if (cached) {
 </script>
 
 <style scoped>
-:root{
-  --brand-blue:#1e88ff;
-  --line:#e9edf2;
-  --muted:#667085;
-  --text:#121417;
-  --accent:#ff6a00;
-  --surface:#fff;
+:root {
+  --brand-blue: #1e88ff;
+  --line: #e9edf2;
+  --muted: #667085;
+  --text: #121417;
+  --accent: #ff6a00;
+  --surface: #fff;
 }
-.brand-logo{ height:25px; width:auto; }
+
+.brand-logo {
+  height: 25px;
+  width: auto;
+}
 
 /* ===== Modal base ===== */
 /* ===== Popup card style (แบบภาพที่ 2) ===== */
 /* ===== Popup card style ===== */
-.modal-backdrop{
-  position: fixed; inset:0;
-  background: rgba(0,0,0,.82);
-  display:grid; place-items:center;
-  z-index:9999;
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .82);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
 }
-.ticket-modal{ position:relative; width: 330px; max-width: 92vw; }
 
-.ticket-card{
-  position:relative;
-  background:#fff;
+.ticket-modal {
+  position: relative;
+  width: 330px;
+  max-width: 92vw;
+}
+
+.ticket-card {
+  position: relative;
+  background: #fff;
   border-radius: 12px;
-  box-shadow: 0 14px 34px rgba(0,0,0,.35);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .35);
   padding: 10px 12px 12px;
 }
 
-.ticket-head{ display:flex; align-items:center; justify-content:space-between; }
-.brand-text{ font-weight:900; color:#ef4444; font-size:18px; }
-.close-x{ border:0; background:transparent; color:#2563eb; font-size:24px; line-height:1; cursor:pointer; }
+.ticket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 
-.divider{ height:1px; background:#E5E7EB; margin:8px 0 6px; }
-.hint{ text-align:center; color:#6b7280; font-size:11px; margin:0 0 8px; }
+.brand-text {
+  font-weight: 900;
+  color: #ef4444;
+  font-size: 18px;
+}
+
+.close-x {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.divider {
+  height: 1px;
+  background: #E5E7EB;
+  margin: 8px 0 6px;
+}
+
+.hint {
+  text-align: center;
+  color: #6b7280;
+  font-size: 11px;
+  margin: 0 0 8px;
+}
 
 /* QR placeholder */
-.qr{
-  display:block;
-  width:210px; height:210px;
-  margin:0 auto 10px;
-  object-fit:contain;
-  border-radius:6px;
-}
-.qr-fallback{
-  display:flex; align-items:center; justify-content:center;
-  background:#f5f7fa; color:#9aa3ad; font-weight:800;
-  border:1px dashed #d1d5db;
+.qr {
+  display: block;
+  width: 210px;
+  height: 210px;
+  margin: 0 auto 10px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
-.details{ padding:4px 4px 0; }
-.row{ margin-bottom:8px; }
-.row.grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
-.label{ display:block; font-size:11px; color:#6b7280; font-weight:700; margin-bottom:2px; }
-.label.red{ color:#ef4444; }
-.value{ font-size:13px; color:#111827; font-weight:800; }
-.value.name{ font-size:13px; }
+.qr-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f7fa;
+  color: #9aa3ad;
+  font-weight: 800;
+  border: 1px dashed #d1d5db;
+}
 
-.dots{ display:flex; justify-content:center; gap:8px; margin-top:8px; }
-.dot{ width:8px; height:8px; border-radius:999px; background:#cbd5e1; border:0; cursor:pointer; }
-.dot.active{ background:#111827; }
+.details {
+  padding: 4px 4px 0;
+}
 
-.nav{ display:flex; justify-content:space-between; margin-top:6px; }
-.nav button{ background:#111827; color:#fff; border:0; width:40px; height:28px; border-radius:6px; cursor:pointer; }
+.row {
+  margin-bottom: 8px;
+}
 
-@media (max-width:380px){
-  .ticket-modal{ width:310px; }
-  .qr{ width:200px; height:200px; }
+.row.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.label {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.label.red {
+  color: #ef4444;
+}
+
+.value {
+  font-size: 13px;
+  color: #111827;
+  font-weight: 800;
+}
+
+.value.name {
+  font-size: 13px;
+}
+
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  border: 0;
+  cursor: pointer;
+}
+
+.dot.active {
+  background: #111827;
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.nav button {
+  background: #111827;
+  color: #fff;
+  border: 0;
+  width: 40px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+@media (max-width:380px) {
+  .ticket-modal {
+    width: 310px;
+  }
+
+  .qr {
+    width: 200px;
+    height: 200px;
+  }
 }
 
 
 
-.event-section{max-width:920px;margin:0 auto;padding:24px 20px 56px;}
-.title-row{display:flex;align-items:center;gap:10px;width:fit-content;padding:10px 14px;border:3px solid var(--brand-blue);border-radius:4px;margin-bottom:5px;}
-.title-row h2{font-size:22px;font-weight:800;color:var(--text);}
-.title-icon{width:22px;height:22px;color:var(--brand-blue);}
+.event-section {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 20px 56px;
+}
 
-.profile-box{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:0 1px 0 rgba(0,0,0,.04);margin:12px 0 18px;}
-.avatar{width:48px;height:48px;border-radius:50%;background:#f2f4f7;color:#2f2f2f;display:inline-flex;align-items:center;justify-content:center;font-size:22px;}
-.info{flex:1;min-width:0;}
-.name{font-weight:700;color:var(--text);}
-.email{margin-top:0px;font-size:14px;color:#667085;}
-.edit-btn{padding:6px 10px;font-size:13px;border:1px solid #d6e7ff;color:#1877f2;background:#eef6ff;border-radius:999px;cursor:pointer;}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  padding: 10px 14px;
+  border: 3px solid var(--brand-blue);
+  border-radius: 4px;
+  margin-bottom: 5px;
+}
 
-.event-card{display:grid;grid-template-columns:120px 1fr;gap:16px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px;box-shadow:0 1px 0 rgba(0,0,0,.05);}
-.poster{width:120px;height:160px;object-fit:cover;border-radius:10px;border:1px solid #ddd;}
-.event-info .date{font:600 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;color:#525252;margin-bottom:6px;}
-.event-title{font-size:22px;font-weight:900;color:var(--text);margin:2px 0 6px;}
-.location{color:#374151;margin-bottom:12px;}
-.view-btn{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
+.title-row h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.title-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--brand-blue);
+}
+
+.profile-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .04);
+  margin: 12px 0 18px;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #f2f4f7;
+  color: #2f2f2f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.email {
+  margin-top: 0px;
+  font-size: 14px;
+  color: #667085;
+}
+
+.edit-btn {
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #d6e7ff;
+  color: #1877f2;
+  background: #eef6ff;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.event-card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 14px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .05);
+}
+
+.poster {
+  width: 120px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+}
+
+.event-info .date {
+  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #525252;
+  margin-bottom: 6px;
+}
+
+.event-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+  margin: 2px 0 6px;
+}
+
+.location {
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 
   /* ขนาด & ฟอนต์ */
   font-weight: 500;
@@ -781,33 +897,60 @@ if (cached) {
   line-height: 1;
 
   /* สี & รูปทรง */
-  background:#ff6a00;        /* ส้มแบบภาพ */
-  color:#fff;
-  border:0;
-  border-radius: 9999px;      /* pill */
+  background: #ff6a00;
+  /* ส้มแบบภาพ */
+  color: #fff;
+  border: 0;
+  border-radius: 9999px;
+  /* pill */
   padding: 10px 20px;
 
   /* เอฟเฟกต์ */
-  box-shadow: 0 6px 12px rgba(255,106,0,.25);
-  cursor:pointer;
+  box-shadow: 0 6px 12px rgba(255, 106, 0, .25);
+  cursor: pointer;
   transition: transform .05s ease, box-shadow .15s ease, background .15s ease;
 }
 
-.view-btn i{
-  font-size: 20px;            /* ไอคอนใหญ่กำลังดี */
+.view-btn i {
+  font-size: 20px;
+  /* ไอคอนใหญ่กำลังดี */
   line-height: 1;
 }
 
 /* hover/active/focus ให้มืออาชีพ */
-.view-btn:hover{ background:#ff730f; box-shadow:0 8px 16px rgba(255,106,0,.33); }
-.view-btn:active{ transform: translateY(1px); box-shadow:0 4px 8px rgba(255,106,0,.28); }
-.view-btn:focus-visible{ outline:2px solid #fff; outline-offset:3px; }
+.view-btn:hover {
+  background: #ff730f;
+  box-shadow: 0 8px 16px rgba(255, 106, 0, .33);
+}
 
-.empty{text-align:center;color:#98a2b3;margin-top:28px;}
+.view-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 8px rgba(255, 106, 0, .28);
+}
 
-@media (max-width:640px){
-  .event-card{grid-template-columns:88px 1fr;}
-  .poster{width:88px;height:124px;}
-  .event-title{font-size:18px;}
+.view-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.empty {
+  text-align: center;
+  color: #98a2b3;
+  margin-top: 28px;
+}
+
+@media (max-width:640px) {
+  .event-card {
+    grid-template-columns: 88px 1fr;
+  }
+
+  .poster {
+    width: 88px;
+    height: 124px;
+  }
+
+  .event-title {
+    font-size: 18px;
+  }
 }
 </style>

@@ -228,20 +228,28 @@ async function createRegistrations() {
 }
 
 async function confirmPayment() {
-  if (!regIds.value.length) { alert('ยังไม่ได้เริ่มการจอง'); return }
+  if (!regIds.value.length) { 
+    alert('ยังไม่ได้เริ่มการจอง'); 
+    return 
+  }
+
   confirming.value = true
   try {
     const paymentReference = String(regIds.value[0])
-    await api.patch('/registrations/confirm', { paymentReference })
+    
+    // ดึง response จาก backend
+    const { data } = await api.patch('/registrations/confirm', { paymentReference })
 
-    sessionStorage.setItem(`successRegIds:${route.params.id}`, JSON.stringify(regIds.value))
-    await router.replace({
+    // เก็บข้อมูลไว้เผื่อ refresh
+    sessionStorage.setItem('lastPayment', JSON.stringify(data))
+
+    //ส่งข้อมูลไปหน้า success
+    router.replace({
       name: 'ticket-success',
-      params: { id: String(route.params.id) },
-      query: { t: Date.now() },
-      state: { regIds: regIds.value }
+      state: { paymentData: data }
     })
 
+    //ล้าง draft เดิม
     sessionStorage.removeItem(`registrationDraft:${route.params.id}`)
     sessionStorage.removeItem(`registrationsDraft:${route.params.id}`)
   } catch (e) {
@@ -252,6 +260,7 @@ async function confirmPayment() {
     stopCountdown()
   }
 }
+
 
 const fallbackPoster = new URL('../assets/poster-fallback.jpg', import.meta.url).href
 const order = ref({
