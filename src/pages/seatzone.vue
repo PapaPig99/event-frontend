@@ -2,6 +2,7 @@
 import api from '@/lib/api'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { isAuthed } from '@/lib/auth'   // ใช้แยก Guest vs Logged-in
 
 /* ===== Router ===== */
 const router = useRouter()
@@ -26,13 +27,11 @@ const zonePriceById   = ref({})  // { "1": 12000, ... }
 const zonePriceByName = ref({})  // { "zone a ...": 12000, ... }
 
 async function ensurePriceIndexLoaded(eventId) {
-  // ถ้ามีแล้ว ไม่ต้องโหลดซ้ำ
   if (Object.keys(zonePriceById.value).length > 0 || Object.keys(zonePriceByName.value).length > 0) return;
 
   const byId  = {}
   const byName= {}
 
-  // 2.1 ดึงจาก plan ก่อน (ถ้ามี)
   const plan = readPlan(eventId)
   if (Array.isArray(plan?.zones)) {
     plan.zones.forEach(z => {
@@ -44,7 +43,6 @@ async function ensurePriceIndexLoaded(eventId) {
     })
   }
 
-  // 2.2 ดึงจาก API เสมอเพื่อให้ครบถ้วน
   try {
     const { data: ev } = await api.get(`/events/${eventId}`)
     if (Array.isArray(ev?.zones)) {
@@ -56,9 +54,7 @@ async function ensurePriceIndexLoaded(eventId) {
         if (key) byName[key] = p
       })
     }
-  } catch (_) {
-    /* เงียบไว้ ใช้เฉพาะที่หาได้ */
-  }
+  } catch (_) {}
 
   zonePriceById.value   = byId
   zonePriceByName.value = byName
@@ -208,7 +204,6 @@ function ensureZonesFromAvailability() {
     const existsById   = existingKeys.has(String(zoneId))
     const existsByName = zones.value.some(z => normalizeKey(z.label ?? z.name ?? z.id) === keyName)
     if (!existsById && !existsByName) {
-      // ใช้ราคาจาก map ก่อน
       let price = 0
       const byId   = zonePriceById.value[String(zoneId)]
       const byName = zonePriceByName.value[keyName]
@@ -265,7 +260,6 @@ async function loadAvailOnce() {
     const { data } = await api.get(`/zones/session/${sid}/availability`)
     latestAvail.value = Array.isArray(data) ? data : []
 
-    // build live/capacity map
     const liveMap = {}
     const capMap  = {}
     latestAvail.value.forEach(item => {
@@ -286,7 +280,6 @@ async function loadAvailOnce() {
     liveAvailByZone.value = liveMap
     capacityByZone.value  = capMap
 
-    // sync zones.remaining กับ live/capacity
     zones.value = zones.value.map(z => {
       const live = liveAvailableFor(z)
       const cap  = capacityFor(z)
@@ -295,16 +288,16 @@ async function loadAvailOnce() {
     })
     reconcileQtyWithLive()
     ensureZonesFromAvailability()
-    // sync ราคาให้โซนเดิมทุกครั้ง (กันกรณี price=0 จากรอบแรก)
-zones.value = zones.value.map(z => {
-  const idKey  = String(z.id)
-  const nameKey= normalizeKey(z.label ?? z.name ?? z.id)
-  const p =
-    (zonePriceById.value[idKey] != null ? zonePriceById.value[idKey] :
-     zonePriceByName.value[nameKey] != null ? zonePriceByName.value[nameKey] :
-     z.price)
-  return { ...z, price: Number(p ?? 0) }
-})
+
+    zones.value = zones.value.map(z => {
+      const idKey  = String(z.id)
+      const nameKey= normalizeKey(z.label ?? z.name ?? z.id)
+      const p =
+        (zonePriceById.value[idKey] != null ? zonePriceById.value[idKey] :
+         zonePriceByName.value[nameKey] != null ? zonePriceByName.value[nameKey] :
+         z.price)
+      return { ...z, price: Number(p ?? 0) }
+    })
 
   } catch (err) {
     availError.value = err?.message || 'โหลดข้อมูลไม่สำเร็จ'
@@ -335,9 +328,9 @@ function closeAvail() {
 function priceOf(z) { return Number(z.price ?? z.unitPrice ?? 0) }
 function leftOf(z)  { return Number(z.remaining ?? z.left ?? z.available ?? 0) }
 
-/* ===== Qty buttons (รับเป็นอ็อบเจ็กต์โซน, ให้ตรงกับ template) ===== */
+/* ===== Qty buttons ===== */
 function inc(z){
-  if (isLocked(z)) return               // NEW: กันกดโซนอื่น
+  if (isLocked(z)) return
   const l = left(z)
   z.qty = Number(z.qty || 0)
   if (l > 0) {
@@ -347,7 +340,7 @@ function inc(z){
   }
 }
 function dec(z){
-  if (isLocked(z)) return               // NEW: กันกดโซนอื่น
+  if (isLocked(z)) return
   z.qty = Number(z.qty || 0)
   if (z.qty > 0) {
     z.qty -= 1
@@ -357,7 +350,7 @@ function dec(z){
 }
 
 
-/* ===== รายการที่เลือกหลายโซน (ใช้ชื่อ selectedDrafts เพื่อไม่ชนของเดิม) ===== */
+/* ===== รายการที่เลือกหลายโซน ===== */
 const selectedDrafts = computed(() =>
   zones.value
     .filter(z => Number(z.qty) > 0)
@@ -371,10 +364,42 @@ const selectedDrafts = computed(() =>
 )
 const canProceed = computed(() => selectedDrafts.value.length > 0)
 
+/* ===== Guest form (บังคับกรอกทุกครั้งสำหรับ Guest) ===== */
+const showGuestForm = ref(false)
+const guestName  = ref('')
+const guestEmail = ref('')
+const guestPhone = ref('')
+
+function isValidEmail(v) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||''))
+}
+function needGuestInfo() {
+  // ล็อกอินแล้วไม่ต้องกรอก / เป็น Guest ต้องกรอกทุกครั้ง
+  return !isAuthed()
+}
+function openGuestModal() {
+  // เปิดทุกครั้ง ไม่พรีฟิลจาก storage เพื่อให้ "ยืนยันใหม่ทุกรอบ"
+  showGuestForm.value = true
+}
+function confirmGuestModal() {
+  if (!guestName.value.trim()) return alert('กรุณากรอกชื่อ-นามสกุล')
+  if (!isValidEmail(guestEmail.value)) return alert('อีเมลไม่ถูกต้อง')
+  // ไม่บันทึกลง sessionStorage — จำกัดแค่คำสั่งซื้อครั้งนี้
+  showGuestForm.value = false
+  actuallyGoToPayment()
+}
+
 /* ===== ไปหน้า Payment (เซฟ drafts & order) ===== */
 function goToPayment(){
   if (!canProceed.value) return
+  if (needGuestInfo()) {
+    openGuestModal()
+    return
+  }
+  actuallyGoToPayment()
+}
 
+function actuallyGoToPayment(){
   const eventId = Number(route.params.id)
   const sessionId = Number(
     sessionLabelToId.value?.[selectedShow.value] ??
@@ -383,7 +408,6 @@ function goToPayment(){
     route.query.sessionId
   )
 
-  // drafts หลายรายการ
   const drafts = selectedDrafts.value.map(it => ({
     eventId, sessionId,
     seatZoneId: it.seatZoneId,
@@ -393,7 +417,6 @@ function goToPayment(){
     zoneLabel:  it.zoneLabel
   }))
 
-  // order summary ให้หน้า Payment
   const showLabel =
     (shows.value || []).find(s => String(sessionLabelToId.value?.[s]) === String(sessionId)) ??
     String(selectedShow.value ?? '')
@@ -406,6 +429,18 @@ function goToPayment(){
     fee:    0
   }
 
+  // แนบอีเมลจาก Guest ของ "ครั้งนี้" เท่านั้น
+  let emailForQuery
+  let guestForState
+  if (!isAuthed()) {
+    emailForQuery = guestEmail.value.trim()
+    guestForState = {
+      fullName: guestName.value.trim(),
+      email: emailForQuery,
+      phone: guestPhone.value.trim()
+    }
+  }
+
   sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(drafts))
   sessionStorage.setItem(`registrationsDrafts:${eventId}`, JSON.stringify(drafts))
   sessionStorage.setItem(`order:${eventId}`, JSON.stringify(order))
@@ -413,7 +448,8 @@ function goToPayment(){
   router.push({
     name: 'payment',
     params: { id: String(eventId) },
-    state:  { registrationsDraft: drafts, registrationsDrafts: drafts, order }
+    query:  { ...(emailForQuery ? { email: emailForQuery } : {}) },
+    state:  { registrationsDraft: drafts, registrationsDrafts: drafts, order, ...(guestForState ? { guest: guestForState } : {}) }
   })
 }
 
@@ -423,7 +459,6 @@ onMounted(async () => {
   const plan = readPlan(id)
   await ensurePriceIndexLoaded(id)
 
-  // HERO จาก plan
   if (plan) {
     title.value        = plan.title || ''
     poster.value       = plan.poster || ''
@@ -431,7 +466,6 @@ onMounted(async () => {
     selectedShow.value = plan.selectedShow || shows.value[0] || ''
   }
 
-  // sessions -> shows + mapping
   if (Array.isArray(plan?.sessions) && plan.sessions.length) {
     sessionsRaw.value = plan.sessions
     const d = plan.startDate || plan.start_date || plan.startDateRaw
@@ -444,14 +478,12 @@ onMounted(async () => {
     await refreshAvailabilityForSelectedShow()
   }
 
-  // seatmap flag
   const lite = readEventLite(id)
   const seatmapUrl = lite?.seatmapImageUrl || lite?.seatmap || ''
   hasSeatmap.value = !!seatmapUrl && !/seatmap-fallback/i.test(seatmapUrl)
 
   if (!poster.value) poster.value = fallbackPoster
 
-  // ถ้า plan ไม่มีเลย → ดึงจาก API อีเวนต์
   if (!plan?.sessions?.length && !plan?.zones?.length) {
     try {
       const { data: ev } = await api.get(`/events/${id}`)
@@ -470,7 +502,6 @@ onMounted(async () => {
         await refreshAvailabilityForSelectedShow()
       }
 
-      // ถ้า backend มี zones fixed ติดอีเวนต์
       if (Array.isArray(ev.zones) && ev.zones.length) {
         zones.value = ev.zones.map((z, i) => ({
           id: z.id || `Z${i+1}`,
@@ -488,20 +519,19 @@ onMounted(async () => {
   }
 })
 
-// NEW: โซนที่กำลังถูกเลือก (มี qty > 0)
+/* NEW: โซนที่กำลังถูกเลือก (มี qty > 0) */
 const activeZoneId = computed(() => {
   const picked = zones.value.find(z => Number(z.qty) > 0)
   return picked ? String(picked.id) : null
 })
 
-// NEW: โซนนี้ถูกล็อกไหม (ห้ามกด) — จะล็อกก็ต่อเมื่อมีโซนที่ถูกเลือกอยู่ และโซนนี้ไม่ใช่โซนนั้น
+/* NEW: โซนนี้ถูกล็อกไหม (ห้ามกด) */
 function isLocked(z) {
   const act = activeZoneId.value
   return !!act && String(z.id) !== act
 }
 
-
-/* ===== เปลี่ยนรอบ -> โหลด availability ใหม่ + sync โซน ===== */
+/* เปลี่ยนรอบ -> โหลด availability ใหม่ */
 watch(selectedShow, async () => {
   await refreshAvailabilityForSelectedShow()
 })
@@ -515,7 +545,6 @@ watch(selectedShow, async () => {
     <!-- การ์ดหัวเรื่อง gradient -->
     <section class="hero-card">
       <div class="poster-wrap">
-        <!-- TODO: เปลี่ยน poster เป็นไฟล์จริง (URL หรือไฟล์ใน src/assets) -->
         <img :src="poster" alt="Poster" class="poster" />
       </div>
 
@@ -523,7 +552,6 @@ watch(selectedShow, async () => {
         <h1 class="event-title">{{ title }}</h1>
 
         <div class="link-row">
-          <!-- TODO: แก้ id ให้ตรงกับ event จริง หรือผูกจาก route param -->
           <router-link :to="{ name: 'event-detail', params: { id: routeId || 1 } }" class="link-chip">
             รายละเอียด
           </router-link>
@@ -538,47 +566,43 @@ watch(selectedShow, async () => {
           <button class="status-chip" @click="openAvail">ที่นั่งว่าง</button>
         </div>
       </div>
-      <!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
-<!-- ===== Modal / Dropdown: โซนที่นั่งว่าง ===== -->
-<div v-if="showAvail" class="avail-backdrop" @click.self="closeAvail">
-  <div class="avail-card">
-    <div class="avail-head">
-      <div class="title">โซนที่นั่ง</div>
-      <button class="close" @click="closeAvail">✕</button>
-    </div>
 
-    <div class="avail-table">
-      <!-- loading -->
-      <div v-if="loadingAvail" class="row" style="justify-content:center; font-weight:700;">
-        กำลังโหลด...
-      </div>
-
-      <!-- error -->
-      <div v-else-if="availError" class="row" style="justify-content:center; color:#d30000; font-weight:700;">
-        โหลดไม่สำเร็จ: {{ availError }}
-      </div>
-
-      <!-- table -->
-      <template v-else>
-        <div class="row header">
-          <div class="col zone">โซนที่นั่ง</div>
-          <div class="col left">ที่นั่งว่าง</div>
-          <div class="col arrow"></div>
-        </div>
-
-        <div v-for="(r, idx) in rowsToShow" :key="idx" class="row">
-          <div class="col zone">{{ r.code }}</div>
-          <div class="col left" :class="qtyClass(r.left)">
-            {{ r.left.toLocaleString('en-US') }}
+      <!-- ===== Availability Modal ===== -->
+      <div v-if="showAvail" class="avail-backdrop" @click.self="closeAvail">
+        <div class="avail-card">
+          <div class="avail-head">
+            <div class="title">โซนที่นั่ง</div>
+            <button class="close" @click="closeAvail">✕</button>
           </div>
-          
-        </div>
 
-        <div v-if="rowsToShow.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
-      </template>
-    </div>
-  </div>
-</div>
+          <div class="avail-table">
+            <div v-if="loadingAvail" class="row" style="justify-content:center; font-weight:700;">
+              กำลังโหลด...
+            </div>
+
+            <div v-else-if="availError" class="row" style="justify-content:center; color:#d30000; font-weight:700;">
+              โหลดไม่สำเร็จ: {{ availError }}
+            </div>
+
+            <template v-else>
+              <div class="row header">
+                <div class="col zone">โซนที่นั่ง</div>
+                <div class="col left">ที่นั่งว่าง</div>
+                <div class="col arrow"></div>
+              </div>
+
+              <div v-for="(r, idx) in rowsToShow" :key="idx" class="row">
+                <div class="col zone">{{ r.code }}</div>
+                <div class="col left" :class="qtyClass(r.left)">
+                  {{ r.left.toLocaleString('en-US') }}
+                </div>
+              </div>
+
+              <div v-if="rowsToShow.length === 0" class="empty">ไม่พบข้อมูลโซน</div>
+            </template>
+          </div>
+        </div>
+      </div>
 
     </section>
 
@@ -604,45 +628,73 @@ watch(selectedShow, async () => {
     <h2 class="section-title">เลือกที่นั่ง</h2>
 
     <!-- ===== รายการโซน ===== -->
-   <div class="zones">
-  <div v-for="z in zones" :key="z.id" class="zone-item">
-  <div class="zone-left">
-    <div class="zone-title">{{ z.label || z.name }}</div>
-    <div class="zone-price">ราคา {{ (priceOf(z) || 0).toLocaleString('en-US') }} THB</div>
-    <div class="zone-remaining">เหลือ {{ leftOf(z) }} ที่นั่ง</div>
-  </div>
+    <div class="zones">
+      <div v-for="z in zones" :key="z.id" class="zone-item">
+        <div class="zone-left">
+          <div class="zone-title">{{ z.label || z.name }}</div>
+          <div class="zone-price">ราคา {{ (priceOf(z) || 0).toLocaleString('en-US') }} THB</div>
+          <div class="zone-remaining">เหลือ {{ leftOf(z) }} ที่นั่ง</div>
+        </div>
 
-  <div class="zone-ctl">
-    <button class="btn" @click="dec(z)" :disabled="(z.qty||0) <= 0">-</button>
-    <div class="qty">{{ z.qty || 0 }}</div>
-    <button class="btn" @click="inc(z)" :disabled="(z.qty||0) >= leftOf(z)">+</button>
-  </div>
-</div>
-</div>
-
+        <div class="zone-ctl">
+          <button class="btn" @click="dec(z)" :disabled="(z.qty||0) <= 0">-</button>
+          <div class="qty">{{ z.qty || 0 }}</div>
+          <button class="btn" @click="inc(z)" :disabled="(z.qty||0) >= leftOf(z)">+</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ===== สรุปด้านล่าง ===== -->
     <section class="summary">
-  <div class="sum-row">
-    <div class="sum-left">
-      <h3 class="sum-zone" v-if="totalQty > 0">{{ primaryZone.label }}</h3>
-      <h3 class="sum-zone" v-else>ยังไม่เลือกที่นั่ง</h3>
-      <div class="sum-qty" v-if="totalQty > 0">จำนวน {{ totalQty }} ที่นั่ง</div>
+      <div class="sum-row">
+        <div class="sum-left">
+          <h3 class="sum-zone" v-if="totalQty > 0">{{ primaryZone.label }}</h3>
+          <h3 class="sum-zone" v-else>ยังไม่เลือกที่นั่ง</h3>
+          <div class="sum-qty" v-if="totalQty > 0">จำนวน {{ totalQty }} ที่นั่ง</div>
+        </div>
+
+        <div class="sum-right">
+          <div class="sum-price">{{ formatTHB(totalAmount) }}</div>
+        </div>
+      </div>
+
+      <div class="sum-actions">
+        <button class="btn-back" @click="goBack">ย้อนกลับ</button>
+        <button class="proceed" :disabled="!canProceed" @click="goToPayment">ไปหน้าชำระเงิน</button>
+      </div>
+    </section>
+
+    <!-- ===== Guest Info Modal (บังคับกรอกทุกครั้ง) ===== -->
+    <div v-if="showGuestForm" class="avail-backdrop" @click.self="showGuestForm=false">
+      <div class="avail-card" style="max-width:520px;">
+        <div class="avail-head">
+          <div class="title">กรอกข้อมูลผู้จอง (Guest)</div>
+          <button class="close" @click="showGuestForm=false">✕</button>
+        </div>
+        <div style="padding:14px 16px; display:grid; gap:10px;">
+          <label style="font-weight:700; color:#111;">
+            ชื่อ-นามสกุล
+            <input v-model.trim="guestName" class="input" placeholder="ชื่อ-นามสกุล" />
+          </label>
+          <label style="font-weight:700; color:#111;">
+            อีเมลสำหรับรับตั๋ว
+            <input v-model.trim="guestEmail" class="input" type="email" placeholder="name@example.com" />
+          </label>
+          <label style="font-weight:700; color:#111;">
+            เบอร์โทร (ออปชัน)
+            <input v-model.trim="guestPhone" class="input" type="tel" placeholder="080-xxx-xxxx" />
+          </label>
+
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+            <button class="btn-back" @click="showGuestForm=false">ยกเลิก</button>
+            <button class="btn-pay" @click="confirmGuestModal">ดำเนินการต่อ</button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="sum-right">
-      <div class="sum-price">{{ formatTHB(totalAmount) }}</div>
-    </div>
   </div>
 
-  <div class="sum-actions">
-    <button class="btn-back" @click="goBack">ย้อนกลับ</button>
-<button class="proceed" :disabled="!canProceed" @click="goToPayment">ไปหน้าชำระเงิน</button>
-  </div>
-</section>
-
-  </div>
-  
 </template>
 
 <style scoped>
@@ -671,7 +723,6 @@ watch(selectedShow, async () => {
 }
 
 /* ที่นั่งว่าง */
-/* ===== Availability Modal ===== */
 .avail-backdrop{
   position: fixed; inset: 0;
   background: rgba(0,0,0,.35);
@@ -711,14 +762,9 @@ watch(selectedShow, async () => {
 .avail-table .col.zone{ font-weight:700; color:#111; }
 .avail-table .col.left{ text-align:right; font-weight:800; }
 .avail-table .col.arrow{ text-align:center; color:#999; }
-
-.avail-table .col.left.ok{ color:#15a915; }   /* เขียว */
-.avail-table .col.left.zero{ color:#d30000; } /* แดง */
-
-.avail-table .empty{
-  padding: 18px; text-align:center; color:#666;
-}
-
+.avail-table .col.left.ok{ color:#15a915; }
+.avail-table .col.left.zero{ color:#d30000; }
+.avail-table .empty{ padding: 18px; text-align:center; color:#666; }
 
 /* HERO */
 .hero-card{
@@ -744,66 +790,15 @@ select{
   background:#fff; border:1px solid #cfcfcf; padding:8px 14px; border-radius:10px; font-weight:800; color:#111;
 }
 
-/* STEPPER แบบภาพ */
-.stepper2 {
-  --ball: 60px;          /* 🔽 ลดขนาดวงกลม จาก 72 → 60 */
-  --track: 6px;          /* 🔽 ลดความหนาเส้น */
-  position: relative;
-  margin: 60px 0 0;      /* 🔽 ลด margin-bottom ให้ห่างข้างล่างน้อยลง */
-  bottom: 20px;
-}
-
-.stepper2 .track {
-  position: absolute;
-  left: calc(var(--ball) / 2 + 10px);   /* 🔽 ขยับเส้นเข้ามา */
-  right: calc(var(--ball) / 2 + 10px);  /* 🔽 ขยับเส้นเข้ามา */
-  top: calc(var(--ball) / 2 - var(--track) / 2);
-  height: var(--track);
-  background: #e5e7eb;
-  border-radius: 999px;
-  z-index: 0;
-}
-
-.stepper2 .steps {
-  display: flex;
-  justify-content: space-between; /* 🔽 เว้นเท่า ๆ กัน */
-  align-items: flex-start;
-  position: relative;
-  z-index: 1;
-  max-width: 600px;               /* 🔽 จำกัดความกว้างรวม */
-  margin: 0 auto;                 /* 🔽 จัดตรงกลาง */
-}
-
-.stepper2 .step {
-  text-align: center;
-  flex: 1;                        /* 🔽 แต่ละ step กินพื้นที่เท่ากัน */
-}
-
-.stepper2 .ball {
-  width: var(--ball);
-  height: var(--ball);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 22px;
-  background: #e0e0e0;
-  color: #000;
-  margin: 0 auto 6px;
-  box-shadow: 0 2px 0 rgba(0,0,0,.04);
-}
-
-.stepper2 .label {
-  font-size: 16px;
-  font-weight: 700;
-  color: #111;
-}
-
-.stepper2 .step:not(.active) .label {
-  color: #6b7280;
-}
-
-.stepper2 .step.active:nth-child(2) .ball{ background:var(--orange); color:#fff; } /* step 2 active */
+/* STEPPER */
+.stepper2 { --ball: 60px; --track: 6px; position: relative; margin: 60px 0 0; bottom: 20px; }
+.stepper2 .track { position: absolute; left: calc(var(--ball) / 2 + 10px); right: calc(var(--ball) / 2 + 10px); top: calc(var(--ball) / 2 - var(--track) / 2); height: var(--track); background: #e5e7eb; border-radius: 999px; z-index: 0; }
+.stepper2 .steps { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1; max-width: 600px; margin: 0 auto; }
+.stepper2 .step { text-align: center; flex: 1; }
+.stepper2 .ball { width: var(--ball); height: var(--ball); border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 22px; background: #e0e0e0; color: #000; margin: 0 auto 6px; box-shadow: 0 2px 0 rgba(0,0,0,.04); }
+.stepper2 .label { font-size: 16px; font-weight: 700; color: #111; }
+.stepper2 .step:not(.active) .label { color: #6b7280; }
+.stepper2 .step.active:nth-child(2) .ball{ background:var(--orange); color:#fff; }
 
 /* Title */
 .section-title{ font-size:22px; font-weight:800; color:#111; margin:18px 0 12px; }
@@ -829,36 +824,18 @@ select{
 .qty-num{ min-width:28px; text-align:center; font-size:28px; font-weight:800; }
 
 /* SUMMARY */
-/* ===== Summary (ส่วนล่าง) ===== */
 .summary { padding: 14px 0 26px; }
-
-/* บรรทัด Zone / จำนวน / ราคา */
-.sum-row{
-  display: flex;
-  justify-content: space-between; /* ให้ซ้าย-ขวาไปสุด */
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
+.sum-row{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .sum-left { display: flex; flex-direction: column; gap: 4px; }
 .sum-zone { margin: 0; font-size: 22px; font-weight: 800; color: #111; }
 .sum-qty { color: #111; font-size: 16px; }
-
 .sum-right { display: flex; align-items: center; }
 .sum-price { font-size:22px; font-weight:900; color:#111; }
+.sum-actions{ display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
 
-/* แถวปุ่ม */
-.sum-actions{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 16px;
-}
-
-
-/* ปุ่มย้อนกลับ (เทา) — ซ้าย */
+/* ปุ่มย้อนกลับ */
 .btn-back{
-  background: #838383cc;          /* เทาเหมือนภาพตัวอย่าง */
+  background: #838383cc;
   color: #000000;
   border: none;
   padding: 10px 22px;
@@ -868,13 +845,13 @@ select{
   cursor: pointer;
 }
 
-/* ปุ่มชำระเงิน (ไล่เฉดส้ม) — ขวา */
+/* ปุ่มชำระเงิน */
 .btn-pay{
   background: linear-gradient(90deg, #ff6a13, #ff3d00);
   color: #fff;
   border: none;
   padding: 10px 26px;
-  border-radius: 999px;          /* โค้งมนแบบแคปซูล */
+  border-radius: 999px;
   font-weight: 800;
   font-size: 16px;
   cursor: pointer;
@@ -890,37 +867,28 @@ select{
   .summary{ flex-direction:column; align-items:flex-start; }
   .sum-right{ width:100%; justify-content:space-between; }
 }
-/* ===== Compatibility: map ชื่อคลาสใหม่ -> ธีมเดิม ===== */
 
-/* กล่องโซน: ให้ .zone-item ดูเหมือน .zone-card เดิม */
+/* Map ชื่อคลาสใหม่ -> ธีมเดิม */
 .zone-item{
   display:flex; justify-content:space-between; align-items:center;
-  background:#e6e6e6;                 /* << สีเทาแบบของเดิม */
+  background:#e6e6e6;
   border-radius:14px; padding:18px 16px;
   border:1px solid #eee;
 }
-
-/* ฝั่งข้อมูลซ้าย ใช้ฟอนต์/ขนาดเดิม */
 .zone-left{ display:flex; flex-direction:column; gap:8px; }
 .zone-title{ font-size:18px; font-weight:800; color:#111; }
-.zone-price{ font-size:16px; font-weight:800; color:#111; }   /* ราคาให้โทนเดียวกับเดิม */
+.zone-price{ font-size:16px; font-weight:800; color:#111; }
 .zone-remaining{ font-size:14px; color:#111; }
-
-/* ปุ่ม + - และตัวเลขกลาง: ให้เหมือน .zone-qty / .qty-btn / .qty-num เดิม */
 .zone-ctl{ display:flex; align-items:center; gap:14px; }
 .zone-ctl .btn{
   width:48px; height:48px;
   border-radius:10px; border:1px solid #e5e7eb; background:#f3f4f6;
   font-size:28px; font-weight:800; color:#222; cursor:pointer;
 }
-.zone-ctl .btn:disabled{
-  opacity:.45; cursor:not-allowed; filter:grayscale(30%);
-}
-.zone-ctl .qty{
-  min-width:28px; text-align:center; font-size:28px; font-weight:800;
-}
+.zone-ctl .btn:disabled{ opacity:.45; cursor:not-allowed; filter:grayscale(30%); }
+.zone-ctl .qty{ min-width:28px; text-align:center; font-size:28px; font-weight:800; }
 
-/* ปุ่มไปชำระเงิน: ให้ .proceed ใช้หน้าตาเดียวกับ .btn-pay เดิม */
+/* ปุ่มไปชำระเงิน */
 .btn-pay,
 .proceed{
   background: linear-gradient(90deg, #ff6a13, #ff3d00);
@@ -933,4 +901,9 @@ select{
   opacity:.5; cursor:not-allowed; filter:grayscale(40%);
 }
 
+/* input ของ guest modal */
+.input{
+  width:100%; padding:10px 12px;
+  border:1px solid #cfcfcf; border-radius:10px; font-size:14px;
+}
 </style>
