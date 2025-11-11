@@ -51,7 +51,11 @@ function handleOpen(id) {
         </li>
       </ul>
 
-      <button class="btn" @click.stop="handleOpen(event.id)">เข้าร่วมงาน</button>
+      <RouterLink :to="`/events/${event.id}/view`" custom v-slot="{ navigate }">
+  <button class="btn" @click.stop="navigate">เข้าร่วมงาน</button>
+</RouterLink>
+
+
     </div>
   </article>
 </template>

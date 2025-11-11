@@ -9,3 +9,9 @@ export async function myRegistrations(status) {
   const { data } = await api.get('/registrations/me', { params: { status } })
   return data
 }
+
+// สำหรับ guest: ต้องแนบ email ใน query และแนบโปรไฟล์ใน body
+export const createGuestRegistration = (payload) => {
+  const { email, ...body } = payload
+  return api.post(`/registrations?email=${encodeURIComponent(email)}`, body).then(r => r.data)
+}
