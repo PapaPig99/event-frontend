@@ -23,8 +23,11 @@
           <div class="divider"></div>
           <p class="hint">Please show it when you arrive at the venue</p>
 
+          <p class="ticket-code-label">Ticket Code</p>
           <!-- QR Placeholder ตายตัว ไม่ต้องโหลดรูป -->
-          <div class="qr qr-fallback">QR</div>
+          <div class="ticket-code-box">
+  {{ activeTicket?.ticketCode || 'TICKET CODE' }}
+</div>
 
           <!-- Details -->
           <div class="details">
@@ -35,21 +38,18 @@
 
             <div class="row grid3">
               <div class="cell">
-                <span class="label">Event Time</span>
-                <div class="value">{{ activeTicket?.timeRange || '-' }}</div>
-              </div>
+  <span class="label red">Event Time</span>
+  <div class="value">{{ activeTicket?.timeRange || '-' }}</div>
+</div>
               <div class="cell">
-                <span class="label">Zone</span>
-                <div class="value">{{ activeTicket?.zone || '-' }}</div>
-              </div>
+  <span class="label red">Zone</span>
+  <div class="value">{{ activeTicket?.zone || '-' }}</div>
+</div>
               <div class="cell">
                 <span class="label red">Ticket ID</span>
                 <div class="value">{{ activeTicket?.ticketID || activeTicket?.id || '-' }}</div>
               </div>
-              <div class="cell">
-                <span class="label red">Ticket Code</span>
-                <div class="value">{{ activeTicket?.ticketCode || '-' }}</div>
-              </div>
+        
             </div>
           </div>
 
@@ -83,8 +83,16 @@
           @error="onImgError(event)" />
 
         <div class="event-info">
-          <p class="date">{{ formatDate(event.date) }}</p>
+          <p class="date">{{ event.displayDateTop }}</p>
           <h3 class="event-title">{{ event.title }}</h3>
+          <p class="round">
+  <span class="round-label">วันแสดง:</span>
+  <span class="round-val">
+    {{ event.displayDateShow }}
+    <template v-if="event.displayTime">  &nbsp;&nbsp; {{ event.displayTime }}</template>
+  </span>
+</p>
+
           <p class="location">{{ event.location }}</p>
           <button class="view-btn" @click="openTicketModal(event.registrationId)">
             <i class="fa-solid fa-qrcode"></i>
@@ -186,6 +194,28 @@ function buildImageCandidates(raw) {
   }
   return [...new Set(urls)]
 }
+
+// ↑ วางใกล้ ๆ buildImageCandidates()/imageCandidatesFromEvent()
+function getEventLiteSessionDate(eventId, sessionId) {
+  try {
+    const raw = sessionStorage.getItem(`eventLite:${eventId}`)
+    if (!raw) return null
+    const obj = JSON.parse(raw)
+    // หา session ที่ id ตรง
+    const s = (obj.sessions || []).find(x => String(x.id) === String(sessionId))
+    return s?.startAt || s?.start_at || s?.startDate || s?.date || null
+  } catch {
+    return null
+  }
+}
+
+function getSavedSessionId(eventId) {
+  try {
+    const v = sessionStorage.getItem(`sessionId:${eventId}`)
+    return v ? Number(v) : null
+  } catch { return null }
+}
+
 
 /** สกัดรูปจาก cache ก่อน แล้วค่อย fallback จาก event API */
 function imageCandidatesFromEvent(ev, eventId) {
@@ -340,33 +370,102 @@ onMounted(async () => {
 
     // 3) ประกอบการ์ด 
     cards.value = regs.map(r => {
-      const ev = eventMap.get(r.eventId) || {}
-      const allSessions = ev.eventSessions || ev.sessions || []
-      const session = allSessions.find(s =>
-        String(s.id) === String(r.sessionId) ||
-        String(s.id) === String(r.session_id)
-      ) || {}
-      const candidates = imageCandidatesFromEvent(ev, r.eventId)
-      const z = resolveZoneFromReg(r, ev)
+      // ---- ดึง session ที่จอง ----
+const ev = eventMap.get(r.eventId) || {}
+const allSessions = ev.eventSessions || ev.sessions || []
 
-      return {
-        registrationId: r.id,
-        id: r.eventId,
-        title: ev.title || ev.name || `Event #${r.eventId}`,
-        date: resolveDate(ev, r),
-        location: ev.location || ev.venue?.name || ev.city || 'TBA',
-        paymentStatus: r.paymentStatus,
-        paymentReference: r.paymentReference || null,
-        ticketCode: r.ticketCode || r.ticket_code || null,
-        fallbackStart:
-          session?.startTime || session?.start_time ||
-          session?.eventStartTime || session?.event_start_time ||
-          ev.startAt || ev.start_at || r.startTime || r.start_time,
-        fallbackZone: z,
-        _imgCandidates: candidates,
-        _imgIdx: 0,
-        currentImage: candidates[0] || ''
-      }
+// 1) ใช้ sessionId ที่กดจริง: จาก BE (registration) > จาก sessionStorage
+const chosenSessionId =
+  r.sessionId ?? r.session_id ?? getSavedSessionId(r.eventId)
+
+// 2) หา session object ให้ได้ก่อน (ไว้ดึงเวลา HH:mm ถ้ามี)
+const session = allSessions.find(s => String(s.id) === String(chosenSessionId)) || {}
+
+// 3) “วันของรอบที่กดจริง” → ดึงจาก eventLite:<eventId> โดยใช้ chosenSessionId
+const liteDateLike = getEventLiteSessionDate(r.eventId, chosenSessionId)
+
+// ---- ดึง start/end ของ "รอบที่จอง" ----
+const startRaw =
+  session?.startTime || session?.start_time ||
+  session?.startAt   || session?.start_at ||
+  r.startTime        || r.start_time ||
+  r.startAt          || r.start_at || null
+
+const endRaw =
+  session?.endTime   || session?.end_time ||
+  session?.endAt     || session?.end_at ||
+  r.endTime          || r.end_time ||
+  r.endAt            || r.end_at || null
+
+// ---- เวลาโชว์ (10.00 น. หรือ 10.00 - 12.00 น.) ----
+const displayTime = buildTimeRange(startRaw, endRaw)
+
+// ---- helpers ----
+const isTimeOnly = v => typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v)
+const toDate = (v) => {
+  if (!v && v !== 0) return null
+  if (typeof v === 'number') return new Date(v < 1e12 ? v * 1000 : v)
+  if (/^\d+$/.test(String(v))) { const n = Number(v); return new Date(n < 1e12 ? n * 1000 : n) }
+  const d = new Date(String(v).replace(/\s+/, 'T'))
+  return isNaN(d) ? null : d
+}
+const prefer = (...cands) => cands.find(x => x != null && String(x).trim?.() !== '' ) ?? null
+
+// ---- วันของ "รอบที่จอง" (ใช้ในวันแสดง:) ----
+const sessionDateLike = prefer(
+  liteDateLike,                          // ✅ วันจากรอบที่กดจริง (cache)
+  session?.startAt, session?.start_at,   // fallback จากรายละเอียด event
+  session?.startDate, session?.date,
+  r.startAt, r.start_time, r.start_at,   // เผื่อ BE เก็บไว้ใน registration
+  ev.startAt, ev.start_at, ev.startDate, ev.date
+)
+
+let dateOfShow = null
+if (isTimeOnly(startRaw)) {
+  const base = toDate(sessionDateLike)
+  if (base) {
+    const [h='0',m='0',s='0'] = String(startRaw).split(':')
+    const yyyy = base.getFullYear()
+    const mm = String(base.getMonth()+1).padStart(2,'0')
+    const dd = String(base.getDate()).padStart(2,'0')
+    dateOfShow = new Date(`${yyyy}-${mm}-${dd}T${h}:${m}:${s}`)
+  }
+} else {
+  dateOfShow = toDate(startRaw) || toDate(sessionDateLike)
+}
+
+// ---- “วันที่ด้านบน” = วันที่ปัจจุบัน ----
+const dateTop = new Date()
+
+// ---- format ไทย ----
+const displayDateTop  = dateTop    ? formatThaiDate(dateTop)    : 'TBA'   // ← วันนี้
+const displayDateShow = dateOfShow ? formatThaiDate(dateOfShow) : 'TBA'   // ← วันรอบที่จอง
+
+// ---- รูป/โซน ----
+const candidates = imageCandidatesFromEvent(ev, r.eventId)
+const z = resolveZoneFromReg(r, ev)
+
+// ---- ส่งออกค่าให้การ์ด ----
+return {
+  registrationId: r.id,
+  id: r.eventId,
+  title: ev.title || ev.name || `Event #${r.eventId}`,
+  date: dateOfShow || null,
+  displayDateTop,      // วันนี้
+  displayDateShow,     // วันรอบที่จอง
+  displayTime,
+  location: ev.location || ev.venue?.name || ev.city || 'TBA',
+  paymentStatus: r.paymentStatus,
+  paymentReference: r.paymentReference || null,
+  ticketCode: r.ticketCode || r.ticket_code || null,
+  fallbackStart: startRaw,
+  fallbackEnd:   endRaw,
+  fallbackZone: z,
+  _imgCandidates: candidates,
+  _imgIdx: 0,
+  currentImage: candidates[0] || ''
+}
+
     })
 
 
@@ -393,23 +492,24 @@ function onImgError(card) {
 
 /** รวมทั้งหมด: sort จากใหม่→เก่า */
 const allEvents = computed(() => {
-  return [...cards.value].sort((a, b) => new Date(b.date) - new Date(a.date))
+  return [...cards.value].sort((a, b) => {
+    const ax = a.date ? new Date(a.date).getTime() : 0
+    const bx = b.date ? new Date(b.date).getTime() : 0
+    return bx - ax
+  })
 })
 
-function formatDate(dateStr) {
-  const date = new Date(dateStr)
-  if (isNaN(date)) return 'TBA'
-
-  return date.toLocaleString('th-TH', {
+function formatThaiDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return null
+  return d.toLocaleDateString('th-TH', {
     timeZone: 'Asia/Bangkok',
     weekday: 'short',
     day: '2-digit',
     month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    year: 'numeric'
   })
 }
+
 
 // === Ticket Modal State ===
 const showTicket = ref(false)
@@ -434,6 +534,39 @@ function nextTicket() {
 function prevTicket() {
   activeIdx.value = (activeIdx.value - 1 + tickets.value.length) % tickets.value.length
 }
+
+
+function isTimeOnly(v) {
+  return typeof v === 'string' && /^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())
+}
+function parseDateLike(v) {
+  if (!v && v !== 0) return null
+  if (typeof v === 'number' || /^\d+$/.test(String(v))) {
+    const n = Number(v)
+    return new Date(n < 1e12 ? n * 1000 : n)
+  }
+  if (typeof v === 'string') {
+    let s = v.trim()
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(s)) s = s.replace(/\s+/, 'T')
+    const d = new Date(s)
+    return isNaN(d) ? null : d
+  }
+  const d = new Date(v)
+  return isNaN(d) ? null : d
+}
+/** รวม "วัน" + "เวลา" เป็น Date จริง (ถ้า time เป็น “HH:mm” จะยัดลงวันนั้น) */
+function composeDateTime(dayLike, timeLike) {
+  const day = parseDateLike(dayLike)
+  if (!day) return null
+  if (!timeLike) return day
+  if (!isTimeOnly(timeLike)) return parseDateLike(timeLike) || day
+  const [h='0', m='0', s='0'] = String(timeLike).split(':')
+  const yyyy = day.getFullYear()
+  const mm = String(day.getMonth()+1).padStart(2,'0')
+  const dd = String(day.getDate()).padStart(2,'0')
+  return new Date(`${yyyy}-${mm}-${dd}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:${(s||'0').padStart(2,'0')}`)
+}
+
 
 
 function buildTimeRange(start, end) {
@@ -590,6 +723,44 @@ function initUser() {
 </script>
 
 <style scoped>
+.round {
+  margin: 4px 0 8px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.round-label {
+  font-weight: 800;
+  color: #ef4444; /* ให้เด่นนิดนึง */
+  margin-right: 6px;
+}
+
+.round-val {
+  font-weight: 700;
+}
+
+.ticket-code-box {
+  margin: 1.5rem auto;
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #e63946;
+  background: linear-gradient(135deg, #f9f9f9, #f0f0f0);
+  border-radius: 16px;
+  padding: 1.2rem 1rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  max-width: 280px;
+}
+
+.ticket-code-label {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0.5rem 0 -0.5rem;
+  letter-spacing: 0.5px;
+}
+
+
 :root {
   --brand-blue: #1e88ff;
   --line: #e9edf2;
