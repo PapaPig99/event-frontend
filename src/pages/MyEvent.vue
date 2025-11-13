@@ -54,10 +54,23 @@
           </div>
 
           <!-- Dots สำหรับหลายรอบ -->
-          <div v-if="tickets.length > 1" class="dots">
-            <button v-for="(t, i) in tickets" :key="t.id || i" :class="['dot', { active: i === activeIdx }]"
-              @click="goTicket(i)" />
-          </div>
+          <!-- Dots + ปุ่มเลื่อน สำหรับหลายใบ -->
+<div v-if="tickets.length > 1">
+  <div class="dots">
+    <button
+      v-for="(t, i) in tickets"
+      :key="t.id || i"
+      :class="['dot', { active: i === activeIdx }]"
+      @click="goTicket(i)"
+    />
+  </div>
+
+  <div class="nav">
+    <button @click="prevTicket">‹</button>
+    <button @click="nextTicket">›</button>
+  </div>
+</div>
+
         </div>
       </div>
     </div>
@@ -77,33 +90,53 @@
     <!-- Single list: ประวัติบัตร -->
     <h3 style="margin: 16px 2px 8px; font-weight: 800;">บัตรของฉัน</h3>
 
-    <div class="event-list">
-      <article v-for="event in allEvents" :key="event.registrationId" class="event-card">
-        <img v-if="event.currentImage" :src="event.currentImage" alt="Event Poster" class="poster"
-          @error="onImgError(event)" />
+<div class="event-list">
+  <!-- 1 การ์ด = 1 รอบแสดง -->
+  <article
+    v-for="group in groupedEvents"
+    :key="group.groupKey"
+    class="event-card"
+  >
+    <img
+      v-if="group.currentImage"
+      :src="group.currentImage"
+      alt="Event Poster"
+      class="poster"
+      @error="onImgError(group)"
+    />
 
-        <div class="event-info">
-          <p class="date">{{ event.displayDateTop }}</p>
-          <h3 class="event-title">{{ event.title }}</h3>
-          <p class="round">
-  <span class="round-label">วันแสดง:</span>
-  <span class="round-val">
-    {{ event.displayDateShow }}
-    <template v-if="event.displayTime">  &nbsp;&nbsp; {{ event.displayTime }}</template>
-  </span>
-</p>
+    <div class="event-info">
+      <p class="date">{{ group.displayDateTop }}</p>
+      <h3 class="event-title">{{ group.title }}</h3>
 
-          <p class="location">{{ event.location }}</p>
-          <button class="view-btn" @click="openTicketModal(event.registrationId)">
-            <i class="fa-solid fa-qrcode"></i>
-            <span>View Ticket</span>
-          </button>
+      <!-- ชื่อรอบแสดง -->
+      <p v-if="group.sessionName" class="round-name">
+        รอบแสดง: {{ group.sessionName }}
+      </p>
 
-        </div>
-      </article>
+      
+      <p class="location">{{ group.location }}</p>
 
-      <p v-if="!allEvents.length" class="empty">ยังไม่มีประวัติบัตร</p>
+      <!-- จำนวนตั๋วในรอบนี้ -->
+      <p v-if="group.totalTickets > 1" class="ticket-count">
+        จำนวนบัตร {{ group.totalTickets }} ใบ
+      </p>
+
+      <button
+        class="view-btn"
+        @click="openTicketModal(group.registrationIds[0])"
+      >
+        <i class="fa-solid fa-qrcode"></i>
+        <span>View Ticket</span>
+      </button>
     </div>
+  </article>
+
+  <p v-if="!groupedEvents.length" class="empty">ยังไม่มีประวัติบัตร</p>
+</div>
+
+
+
   </section>
 </template>
 
@@ -437,13 +470,30 @@ if (isTimeOnly(startRaw)) {
 // ---- “วันที่ด้านบน” = วันที่ปัจจุบัน ----
 const dateTop = new Date()
 
-// ---- format ไทย ----
-const displayDateTop  = dateTop    ? formatThaiDate(dateTop)    : 'TBA'   // ← วันนี้
-const displayDateShow = dateOfShow ? formatThaiDate(dateOfShow) : 'TBA'   // ← วันรอบที่จอง
+// ---- format ไทย เฉพาะวันที่ด้านบน (วันนี้) ----
+const displayDateTop = dateTop ? formatThaiDate(dateTop) : 'TBA'
+
+// สำหรับ "วันแสดง" ให้โชว์ค่าดิบจาก BE / cache เลย ไม่แปลง format
+const displayDateShow =
+  sessionDateLike
+    ? String(sessionDateLike)
+    : (startRaw ? String(startRaw) : 'TBA')
 
 // ---- รูป/โซน ----
 const candidates = imageCandidatesFromEvent(ev, r.eventId)
 const z = resolveZoneFromReg(r, ev)
+
+
+const sessionName =
+  session?.name ||
+  session?.label ||
+  session?.title ||
+  r.sessionName ||
+  r.session_name ||
+  r.roundName ||
+  r.round_name ||
+  null
+
 
 // ---- ส่งออกค่าให้การ์ด ----
 return {
@@ -461,6 +511,10 @@ return {
   fallbackStart: startRaw,
   fallbackEnd:   endRaw,
   fallbackZone: z,
+  // 👇 เพิ่มสองบรรทัดนี้
+  sessionId: chosenSessionId,
+  sessionName,
+
   _imgCandidates: candidates,
   _imgIdx: 0,
   currentImage: candidates[0] || ''
@@ -497,6 +551,49 @@ const allEvents = computed(() => {
     const bx = b.date ? new Date(b.date).getTime() : 0
     return bx - ax
   })
+})
+
+/**
+ * groupedEvents:
+ * - 1 การ์ด = 1 รอบการแสดง
+ * - key ใช้: eventId + sessionId (ถ้าไม่มี sessionId ค่อย fallback ใช้ชื่อรอบ)
+ */
+const groupedEvents = computed(() => {
+  const groups = new Map()
+
+  for (const c of allEvents.value) {
+    const sid = c.sessionId != null ? String(c.sessionId) : ''
+    const sname = c.sessionName || ''
+    const key = [c.id ?? '', sid, sname].join('|')
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        groupKey: key,
+        eventId: c.id,
+        sessionId: c.sessionId,
+        sessionName: c.sessionName,
+
+        title: c.title,
+        displayDateTop: c.displayDateTop,
+        displayDateShow: c.displayDateShow,
+        displayTime: c.displayTime,
+        location: c.location,
+
+        currentImage: c.currentImage,
+        _imgCandidates: c._imgCandidates,
+        _imgIdx: c._imgIdx || 0,
+
+        registrationIds: [c.registrationId],
+        totalTickets: 1
+      })
+    } else {
+      const g = groups.get(key)
+      g.registrationIds.push(c.registrationId)
+      g.totalTickets += 1
+    }
+  }
+
+  return Array.from(groups.values())
 })
 
 function formatThaiDate(d) {
@@ -628,20 +725,46 @@ function cryptoRandom() {
 
 
 function openTicketModal(registrationId) {
-  const found = cards.value.find(c => String(c.registrationId) === String(registrationId))
-  if (!found) return
+  // หาใบที่คลิกก่อน
+  const clicked = cards.value.find(
+    c => String(c.registrationId) === String(registrationId)
+  )
+  if (!clicked) return
 
-  tickets.value = [{
-    id: registrationId,
-    eventName: found.title,
-    zone: found.fallbackZone || '-',
-    ticketID: found.registrationId,
-    ticketCode: found.ticketCode || found.paymentReference || found.registrationId,
-    timeRange: buildTimeRange(found.fallbackStart, found.fallbackEnd),
-  }]
+  // ✅ กรองเฉพาะบัตรใน "รอบเดียวกัน"
+  let group = cards.value.filter(c =>
+    c.id === clicked.id &&
+    String(c.sessionId ?? '') === String(clicked.sessionId ?? '')
+  )
+
+  // ถ้า BE ไม่ส่ง sessionId แต่มีชื่อรอบ → fallback ใช้ชื่อรอบ
+  if (!group.length && clicked.sessionName) {
+    group = cards.value.filter(c =>
+      c.id === clicked.id && c.sessionName === clicked.sessionName
+    )
+  }
+
+  if (!group.length) {
+    group = [clicked]
+  }
+
+  tickets.value = group.map(c => ({
+    id: c.registrationId,
+    eventName: c.title,
+    zone: c.fallbackZone || '-',
+    ticketID: c.registrationId,
+    ticketCode: c.ticketCode || c.paymentReference || c.registrationId,
+    timeRange: buildTimeRange(c.fallbackStart, c.fallbackEnd),
+  }))
+
+  const idx = group.findIndex(
+    c => String(c.registrationId) === String(registrationId)
+  )
+  activeIdx.value = idx >= 0 ? idx : 0
 
   showTicket.value = true
 }
+
 
 
 
@@ -897,7 +1020,12 @@ function initUser() {
   gap: 8px;
   margin-top: 8px;
 }
-
+.ticket-count {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+}
 .dot {
   width: 8px;
   height: 8px;
@@ -1021,7 +1149,7 @@ function initUser() {
 
 .event-card {
   display: grid;
-  grid-template-columns: 120px 1fr;
+  grid-template-columns: 180px 1fr;
   gap: 16px;
   background: #fff;
   border: 1px solid var(--line);
@@ -1032,8 +1160,8 @@ function initUser() {
 }
 
 .poster {
-  width: 120px;
-  height: 160px;
+  width: 160px;
+  height: 230px;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid #ddd;
@@ -1055,6 +1183,7 @@ function initUser() {
 .location {
   color: #374151;
   margin-bottom: 12px;
+  font-size: 13px;
 }
 
 .view-btn {
@@ -1064,7 +1193,7 @@ function initUser() {
 
   /* ขนาด & ฟอนต์ */
   font-weight: 500;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 
   /* สี & รูปทรง */
@@ -1083,7 +1212,7 @@ function initUser() {
 }
 
 .view-btn i {
-  font-size: 20px;
+  font-size: 16px;
   /* ไอคอนใหญ่กำลังดี */
   line-height: 1;
 }
@@ -1108,6 +1237,18 @@ function initUser() {
   text-align: center;
   color: #98a2b3;
   margin-top: 28px;
+}
+
+.round-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.ticket-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff0000;
 }
 
 @media (max-width:640px) {
