@@ -430,6 +430,7 @@ function actuallyGoToPayment(){
   }
 
   // แนบอีเมลจาก Guest ของ "ครั้งนี้" เท่านั้น
+    // แนบอีเมลจาก Guest ของ "ครั้งนี้" เท่านั้น
   let emailForQuery
   let guestForState
   if (!isAuthed()) {
@@ -439,18 +440,31 @@ function actuallyGoToPayment(){
       email: emailForQuery,
       phone: guestPhone.value.trim()
     }
+
+    // 🔹 เซฟอีเมล guest ไว้ให้หน้า Payment ใช้
+    if (isValidEmail(emailForQuery)) {
+      sessionStorage.setItem('buyerEmail', emailForQuery)
+      localStorage.setItem('buyerEmail', emailForQuery)
+    }
   }
 
   sessionStorage.setItem(`registrationsDraft:${eventId}`, JSON.stringify(drafts))
   sessionStorage.setItem(`registrationsDrafts:${eventId}`, JSON.stringify(drafts))
   sessionStorage.setItem(`order:${eventId}`, JSON.stringify(order))
 
-  router.push({
+
+    router.push({
     name: 'payment',
     params: { id: String(eventId) },
     query:  { ...(emailForQuery ? { email: emailForQuery } : {}) },
-    state:  { registrationsDraft: drafts, registrationsDrafts: drafts, order, ...(guestForState ? { guest: guestForState } : {}) }
+    state:  {
+      registrationsDraft: drafts,
+      registrationsDrafts: drafts,
+      order,
+      ...(guestForState ? { guest: guestForState } : {})
+    }
   })
+
 }
 
 /* ===== Initial mount ===== */
