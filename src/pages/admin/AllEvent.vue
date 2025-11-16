@@ -1,190 +1,334 @@
 <template>
-  <section class="all-events">
-    <header class="toolbar">
-      <div class="title">All Events</div>
-      <RouterLink to="/admin/create" class="title">
-        <button class="btn add" @click="goCreate">+ เพิ่มอีเวนต์</button>
-      </RouterLink>
-    </header>
+  <section class="events-page">
 
-    <!-- แถวฟิลเตอร์หมวดหมู่ -->
-    <CategoryFilter
-      v-model="selectedCats"
-      :options="categoryOptions"
-      class="mb-12"
-    />
+    <!-- CENTER: Event List -->
+    <main class="center-panel">
 
-    <!-- แถวค้นหาชื่อรวม -->
-    <div class="search-bar">
-      <input
-        v-model="qTitle"
-        type="text"
-        placeholder="ค้นหาชื่ออีเวนต์ทั้งหมด"
-        aria-label="ค้นหาอีเวนต์"
-      />
-      <svg class="search-ic" viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="currentColor"
-          d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.71.71l.27.28v.79L20 20.5 21.5 19 15.5 14zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/>
-      </svg>
-    </div>
+      <!-- Header -->
+      <header class="center-header">
+        <h2 class="center-title">All Events</h2>
 
-    <!-- สรุปจำนวนผลลัพธ์ + ปุ่มเคลียร์ -->
-    <div class="result-info">
-      <span>พบ {{ filteredEvents.length }} รายการ</span>
-      <button v-if="selectedCats.length || qTitle" class="link" @click="clearAll">ล้างตัวกรอง</button>
-    </div>
+        <RouterLink to="/admin/create">
+          <button class="btn-add">+ Create Event</button>
+        </RouterLink>
+      </header>
 
-    <!-- แสดงผลแบบกริดรายการเดียว -->
-    <div class="grid">
-      <EventCardAdmin
-        v-for="ev in filteredEvents"
-        :key="ev.id"
-        :event="ev"
-        @view="onView"
-        @edit="onEdit"
-        @remove="onRemove"
-      />
-    </div>
+      <!-- FILTER BAR -->
+      <div class="filters">
+
+        <!-- Search -->
+        <input
+          v-model="qTitle"
+          type="text"
+          placeholder="Search event..."
+          class="input"
+        />
+
+        <!-- Category Chips -->
+        <div class="chips">
+          <div
+            v-for="c in categoryOptions"
+            :key="c.key"
+            :class="['chip', { active: selectedCats.includes(c.key) }]"
+            @click="toggleCategory(c.key)"
+          >
+            {{ c.label }}
+          </div>
+        </div>
+
+        <!-- Clear -->
+        <button
+          v-if="selectedCats.length || qTitle"
+          class="clear-btn"
+          @click="clearAll"
+        >
+          Clear filters
+        </button>
+      </div>
+
+      <!-- Event List -->
+      <div class="list-box">
+        <div
+          v-for="ev in filteredEvents"
+          :key="ev.id"
+          :class="['event-item', { active: ev.id === selectedEvent?.id }]"
+          @click="selectEvent(ev)"
+        >
+          <img
+            :src="ev.posterImageUrl || '/no-image.png'"
+            alt="event cover"
+            class="ev-image"
+          />
+
+          <div class="ev-info">
+            <div class="ev-title">{{ ev.title }}</div>
+            <div class="ev-meta">
+              {{ ev.category }} • {{ ev.startDate }} → {{ ev.endDate }}
+            </div>
+          </div>
+        </div>
+
+        <div v-if="filteredEvents.length === 0" class="empty-text">
+          No events found
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT: Detail Panel -->
+    <aside class="right-panel" v-if="selectedEvent">
+      <h2 class="detail-title">{{ selectedEvent.title }}</h2>
+
+      <div class="detail-row">
+        <span>Category:</span> {{ selectedEvent.category }}
+      </div>
+      <div class="detail-row">
+        <span>Date:</span> {{ selectedEvent.startDate }} → {{ selectedEvent.endDate }}
+      </div>
+      <div class="detail-row">
+        <span>Location:</span> {{ selectedEvent.location }}
+      </div>
+
+      <div class="actions">
+        <button class="btn-light" @click="onView(selectedEvent.id)">View</button>
+        <button class="btn-light" @click="onEdit(selectedEvent.id)">Edit</button>
+        <button class="btn-danger" @click="onRemove(selectedEvent.id)">Delete</button>
+      </div>
+    </aside>
+
+    <aside class="right-panel empty" v-else>
+      <div class="empty-text">Select an event</div>
+    </aside>
+
   </section>
 </template>
-
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { useRouter } from "vue-router"
-import CategoryFilter from "@/components/EventColumnHead.vue"
-import EventCardAdmin from "@/components/EventCardAdmin.vue"
-import api from "@/lib/api"
+import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import api from "@/lib/api";
 
-const router = useRouter()
-const events = ref([])
+const router = useRouter();
+
+const events = ref([]);
+const selectedEvent = ref(null);
 
 onMounted(async () => {
-  try {
-    const res = await fetch("/api/events", { headers: { Accept: "application/json" } })
-    const data = await res.json()
-    events.value = Array.isArray(data) ? data : (data.items ?? [])
-  } catch (err) {
-    console.error("โหลด events ไม่ได้:", err)
-  }
-})
+  const res = await api.get("/events");
+  events.value = res.data;
+});
 
+/* -------- Event actions -------- */
+function selectEvent(ev) {
+  selectedEvent.value = ev;
+}
 function onView(id) {
-  router.push(`/admin/events/${id}/detail`)
+  router.push(`/admin/events/${id}/detail`);
 }
 function onEdit(id) {
-  router.push(`/admin/events/${id}/edit`)
+  router.push(`/admin/events/${id}/edit`);
 }
 async function onRemove(id) {
-  if (!confirm("คุณต้องการลบอีเวนต์นี้ใช่หรือไม่?")) return
-  try {
-    await api.delete(`/events/${id}`)
-    events.value = events.value.filter(ev => ev.id !== id)
-    alert("ลบอีเวนต์เรียบร้อยแล้ว")
-  } catch (err) {
-    console.error("เกิดข้อผิดพลาดในการลบ:", err)
-    alert("ไม่สามารถลบอีเวนต์ได้")
+  if (!confirm("Delete this event?")) return;
+  await api.delete(`/events/${id}`);
+  events.value = events.value.filter(e => e.id !== id);
+  selectedEvent.value = null;
+  alert("Event deleted");
+}
+
+/* -------- Filters -------- */
+const qTitle = ref("");
+const selectedCats = ref([]);
+
+const categoryOptions = [
+  { key: "concert", label: "คอนเสิร์ต" },
+  { key: "show", label: "การแสดง" },
+  { key: "education", label: "การศึกษา" },
+  { key: "business", label: "ธุรกิจ" },
+  { key: "sport", label: "กีฬา" },
+];
+
+function toggleCategory(c) {
+  if (selectedCats.value.includes(c)) {
+    selectedCats.value = selectedCats.value.filter(x => x !== c);
+  } else {
+    selectedCats.value.push(c);
   }
 }
 
-const qTitle = ref("")
-const selectedCats = ref([]) // array ของ key หมวดที่เลือก
-
-const categoryOptions = [
-  { key: "concert",   label: "คอนเสิร์ต",     color: "#51A6F7" },
-  { key: "show",      label: "การแสดง",       color: "#F7B23B" },
-  { key: "education", label: "การศึกษา",      color: "#8F79F6" },
-  { key: "business",  label: "ธุรกิจและการ",  color: "#35C864" },
-  { key: "sport",     label: "กีฬา",           color: "#7A7A7A" },
-]
-
-// utils เดิม: normalize category
-const lc = (v) => String(v ?? "").toLowerCase()
-const catKey = (c) => {
-  const s = lc(c)
-  if (s.includes("concert")   || s.includes("คอนเสิร์ต")) return "concert"
-  if (s.includes("show")      || s.includes("แสดง"))      return "show"
-  if (s.includes("education") || s.includes("ศึกษา"))     return "education"
-  if (s.includes("business")  || s.includes("ธุรกิจ"))    return "business"
-  if (s.includes("sport")     || s.includes("กีฬา"))      return "sport"
-  return "other"
+function clearAll() {
+  qTitle.value = "";
+  selectedCats.value = [];
 }
 
 const filteredEvents = computed(() => {
-  const title = lc(qTitle.value)
-  const selected = new Set(selectedCats.value)
+  const keyword = qTitle.value.toLowerCase();
+  const selected = new Set(selectedCats.value);
+
   return events.value.filter(ev => {
-    const evCat = catKey(ev.category)
-    const matchCat = selected.size === 0 ? true : selected.has(evCat)
-    const matchTitle = lc(ev.title).includes(title)
-    return matchCat && matchTitle
-  })
-})
-
-function clearAll() {
-  selectedCats.value = []
-  qTitle.value = ""
-}
+    const catMatch = selected.size === 0 || selected.has(ev.category);
+    const nameMatch = ev.title.toLowerCase().includes(keyword);
+    return catMatch && nameMatch;
+  });
+});
 </script>
-
 <style scoped>
-.all-events { padding: 20px; }
-
-.toolbar {
+.events-page {
   display: flex;
-  align-items: center;
+  height: calc(100vh - var(--header-h));
+  background: #fafafa;
+  font-family: system-ui, sans-serif;
+}
+
+/* CENTER */
+.center-panel {
+  flex: 1;
+  padding: 32px;
+}
+
+/* Header */
+.center-header {
+  display: flex;
   justify-content: space-between;
-}
-.title { color: #5f6063; font-size: 20px; font-weight: 400; }
-.btn.add {
-  font-size: 18px; color: #fff; border: 1px solid #eee;
-  background: #5465FF; border-radius: 8px; padding: 8px 15px; cursor: pointer;
-}
-
-.mb-12 { margin-bottom: 12px; }
-
-.search-bar {
-  position: relative;
-  background: #fff;
-  box-shadow: 0 2px 4px rgba(0,0,0,.08);
-  border: 1px solid #e5e5e5;
-  height: 50px;
-  width: 80;
-  margin-bottom: 8px;
-}
-.search-bar input {
-  all: unset;
-  width: 100%;
-  height: 100%;
-  padding: 0 36px 0 12px;
-  color: #333;
-  font-size: 15px;
-}
-.search-ic {
-  position: absolute; right: 10px; top: 50%;
-  transform: translateY(-50%);
-  width: 18px; height: 18px; color: #9aa0a6;
-}
-
-.result-info {
-  display: flex;
   align-items: center;
-  gap: 12px;
-  color: #666;
-  margin-bottom: 10px;
+}
+
+/* ADD Button */
+.btn-add {
+  background: #ffffff;
+  border: 1px solid #ccc;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+.btn-add:hover { background: #f2f2f2; }
+
+/* Filters */
+.filters {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  padding: 16px 20px;
+  margin-top: 20px;
+  border-radius: 12px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Search input */
+.input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #fafafa;
   font-size: 14px;
 }
-.link {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: #5465FF;
-  cursor: pointer;
-  padding: 0;
+
+/* Category Chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.grid {
-  display: grid;
-  gap: 10px;
-  align-items: start;
+.chip {
+  padding: 6px 14px;
+  background: #f2f2f2;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: 0.15s;
+  border: 1px solid transparent;
+}
+
+.chip:hover {
+  background: #e8e8e8;
+}
+
+.chip.active {
+  background: #dcdcdc;
+  border-color: #bfbfbf;
+  font-weight: 500;
+  
+}
+
+/* Clear button */
+.clear-btn {
+  background: none;
+  border: none;
+  color: #5465FF;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  align-self: flex-end;
+  margin-top: -6px;
+}
+
+
+/* Event list */
+.list-box { margin-top: 20px; }
+
+.event-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+  padding: 14px;
+  border: 1px solid #e5e5e5;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.event-item.active {
+  border: 1px solid #cccccc;
+  background: #f0f0f0;
+}
+.ev-image {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.event-item:hover { background: #f7f7f7; }
+
+/* Detail panel (right) */
+.right-panel {
+  width: 300px;
+  background: white;
+  border-left: 1px solid #e5e5e5;
+  padding: 24px;
+}
+
+.btn-light {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #333;
+  transition: 0.15s;
+}
+.btn-danger {
+  background: #FF3336;
+  color: #fff;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px ;
+  cursor: pointer;
+}
+
+.btn-light:hover {
+  background: #f2f2f2;
+}
+
+.actions {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 </style>

@@ -1,9 +1,9 @@
-<!-- src/pages/admin/Overview.vue -->
+<!-- src/pages/admin/Dashboard.vue -->
 <template>
-  <section class="overview-events">
+  <section class="dashboard-events">
     <!-- Top bar -->
     <header class="toolbar">
-      <h2 class="title" :style="h2">Overview</h2>
+      <h2 class="title" :style="h2">Dashboard ยังไม่ได้แก้ backend ก็ยังไม่ได้เพิ่ม</h2>
     </header>
 
     <!-- Loading / Error -->
@@ -198,7 +198,7 @@ const eventSub  = { marginTop:"2px", fontSize:"12px", color: color.muted };
   font-size:50px;
 }
 
-.overview-events {
+.dashboard-events {
   padding: 20px;
 }
 .title {

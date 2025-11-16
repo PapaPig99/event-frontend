@@ -2,7 +2,7 @@
   <div class="event-detail-page" @keyup.esc="closeModal" tabindex="0">
     <!-- Top toolbar -->
     <header class="toolbar">
-      <div class="page-title">Event details</div>
+      <div class="page-title">Event details ยังไม่ได้แก้</div>
     </header>
 
     <!-- HERO -->
