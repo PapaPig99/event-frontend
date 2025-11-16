@@ -257,7 +257,7 @@ function clearSeat() {
   <section class="create-events">
 
     <header class="toolbar">
-      <div class="title">Create event</div>
+      <div class="title">Create event ยังไม่ได้แก้</div>
       
     </header>
     <!-- ข้อมูลอีเวนต์ -->

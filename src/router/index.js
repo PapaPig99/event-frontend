@@ -52,12 +52,14 @@ const routes = [
     component: () => import('@/layouts/AdminLayout.vue'),
     meta: { requiresAuth: true, requiresRole: 'ADMIN', adminArea: true },
     children: [
-      { path: '', redirect: '/admin/overview' },
-      { path: 'overview', name: 'admin-overview', component: () => import('@/pages/admin/Overview.vue') },
+      { path: '', redirect: '/admin/dashboard' },
+      { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/pages/admin/Dashboard.vue') },
       { path: 'allevents', name: 'admin-all-events', component: () => import('@/pages/admin/AllEvent.vue') },
       { path: 'create', name: 'admin-create-event', component: () => import('@/pages/admin/CreateEvent.vue') },
       { path: 'events/:id/edit', name: 'admin-edit-event', component: () => import('@/pages/admin/EditEvent.vue') },
       { path: 'events/:id/detail', name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue') },
+      { path: 'check-in', name: 'admin-events-checkin', component: () => import('@/pages/admin/Check-in.vue') },
+      { path: 'zones', name: 'admin-events-zones', component: () => import('@/pages/admin/Zones.vue') },
     ],
   },
 

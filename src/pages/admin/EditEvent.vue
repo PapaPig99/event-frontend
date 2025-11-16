@@ -387,7 +387,7 @@ async function save() {
     <header class="toolbar">
       <!-- กล่องแจ้งเตือน -->
 
-      <div class="title">Edit event</div>
+      <div class="title">Edit event ยังไม่ได้แก้</div>
 
     </header>
     <!-- ข้อมูลอีเวนต์ -->
