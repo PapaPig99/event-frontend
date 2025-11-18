@@ -1,13 +1,13 @@
 <template>
   <div class="toast-container">
-  <div v-for="t in toasts" :key="t.id" class="toast-item" :class="t.type">
-    <span>{{ t.message }}</span>
-    <button class="toast-close" @click="closeToast(t.id)">✕</button>
+    <div v-for="t in toasts" :key="t.id" class="toast-item" :class="t.type">
+      <span>{{ t.message }}</span>
+      <button class="toast-close" @click="closeToast(t.id)">✕</button>
+    </div>
   </div>
-</div>
 
   <section class="checkin-page">
-    
+
     <div class="checkin-box">
 
       <h1 class="title">Check-in</h1>
@@ -24,21 +24,19 @@
       <select v-model="selectedSession" class="select" :disabled="!selectedEvent">
         <option value="">Select session</option>
         <option v-for="s in sessions" :key="s.id" :value="s.id">
-          {{ s.name }} ({{ s.startTime }} - {{ s.endTime }})
+          {{ s.name }} ({{ extractTime(s.startTime) }})
         </option>
+
+
 
       </select>
 
       <!-- Ticket input -->
       <input v-model="code" @keyup.enter="submit" type="text" placeholder="Ticket code" class="input" />
 
-      <button
-  class="btn"
-  @click="submit"
-  :disabled="loading || !selectedEvent || !selectedSession"
->
-  {{ loading ? "Checking…" : "Check-in" }}
-</button>
+      <button class="btn" @click="submit" :disabled="loading || !selectedEvent || !selectedSession">
+        {{ loading ? "Checking…" : "Check-in" }}
+      </button>
 
 
       <!-- Success / Error -->
@@ -66,6 +64,12 @@ const code = ref("");
 const loading = ref(false);
 const success = ref("");
 const error = ref("");
+
+//ตัดเลข
+function extractTime(v) {
+  if (!v) return "";
+  return v.slice(0, 5);   // "19:00:00" → "19:00"
+}
 
 // แจ้งเตือน
 const toasts = ref([]);
@@ -208,7 +212,6 @@ onMounted(loadEvents);
 }
 
 .btn:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -238,6 +241,7 @@ onMounted(loadEvents);
 .fade-leave-to {
   opacity: 0;
 }
+
 .toast-container {
   position: fixed;
   top: 20px;
@@ -258,11 +262,13 @@ onMounted(loadEvents);
   background: #333;
   color: white;
   font-size: 14px;
-  box-shadow: 0 3px 12px rgba(0,0,0,0.2);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
   animation: slideIn 0.25s ease;
 }
 
-.toast-item.success { background: #2b8a3e; }
+.toast-item.success {
+  background: #2b8a3e;
+}
 
 .toast-close {
   background: transparent;
@@ -274,8 +280,14 @@ onMounted(loadEvents);
 }
 
 @keyframes slideIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
 
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
 </style>

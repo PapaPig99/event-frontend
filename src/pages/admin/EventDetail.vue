@@ -2,7 +2,10 @@
   <div class="event-detail-page" @keyup.esc="closeModal" tabindex="0">
     <!-- Top toolbar -->
     <header class="toolbar">
-      <div class="page-title">Event details ยังไม่ได้แก้</div>
+      <div class="page-title">
+        Event details <span v-if="event.id">#{{ event.id }}</span>
+      </div>
+
     </header>
 
     <!-- HERO -->
@@ -108,15 +111,16 @@
             <div class="table-row">
               <div class="date-text">{{ s.name }}</div>
               <div class="actions">
-                <button class="btn attendee" @click="toggleAttendees(s)">
-                  <svg class="icon-user" viewBox="0 0 24 24" aria-hidden="true">
+                <RouterLink :to="`/admin/regis-zone/${event.id}?session=${s.id}`" class="btn attendee">
+                  <svg class="icon-user" viewBox="0 0 24 24">
                     <path
                       d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5zm0 2c-3.866 0-7 2.239-7 5v2h14v-2c0-2.761-3.134-5-7-5z" />
                   </svg>
-                  รายชื่อผู้เข้าร่วม
-                </button>
 
-                <button class="time-pill" @click="toggleZones(s)">
+                  รายชื่อผู้เข้าร่วม
+                </RouterLink>
+
+                <button class="time-btn" @click="toggleZones(s)">
                   {{ s.startTime ? s.startTime.replace(/:00$/, '') : '-' }}
                 </button>
               </div>
@@ -146,59 +150,6 @@
                     </div>
                   </div>
                   <div v-if="(zonesBySession[s.id] || []).length === 0" class="empty-note">ไม่มีข้อมูลโซน</div>
-                </div>
-              </div>
-            </transition>
-
-            <!-- แผงตารางผู้เข้าร่วม -->
-            <transition name="collapse">
-              <div v-if="expandedAttendeesId === s.id" class="inline-panel">
-                <div class="panel-head">
-                  <strong>รายชื่อผู้เข้าร่วม</strong>
-                  <small v-if="attLoadingId === s.id">กำลังโหลด...</small>
-                  <small v-else-if="attError" class="error">{{ attError }}</small>
-                </div>
-
-                <div v-if="attLoadingId !== s.id && !attError" class="table attendees-table">
-                  <div class="t-head">
-                    <div class="col no">#</div>
-                    <div class="col name">ชื่อ</div>
-                    <div class="col email">อีเมล</div>
-                    <div class="col phone">โทร</div>
-                    <div class="col ticket">โซน</div>
-                    <div class="col qty">จำนวน</div>
-                    <div class="col reg">สถานะจอง</div>
-                    <div class="col pay">ชำระเงิน</div>
-                    <div class="col time">ลงทะเบียน</div>
-                    <div class="col ref">Ref</div>
-                  </div>
-
-                  <div class="t-row" v-for="(r, idx) in (attendeesBySession[s.id] || [])" :key="r.id || idx">
-                    <div class="col no">{{ idx + 1 }}</div>
-                    <div class="col name">{{ r.user?.name || '-' }}</div>
-                    <div class="col email mono">{{ r.user?.email || '-' }}</div>
-                    <div class="col phone mono">{{ r.user?.phone || '-' }}</div>
-                    <div class="col ticket">Zone#{{ r.zoneId ?? '-' }}</div>
-                    <div class="col qty">{{ r.quantity ?? '-' }}</div>
-                    <div class="col reg">
-                      <span class="status-chip" :class="statusClass(r.registrationStatus)">
-                        {{ r.registrationStatus || '-' }}
-                      </span>
-                    </div>
-                    <div class="col pay">
-                      <span class="status-chip" :class="payClass(r.paymentStatus)">
-                        {{ r.paymentStatus || '-' }}
-                      </span>
-                    </div>
-                    <div class="col time mono">
-                      {{ r.registeredAt ? r.registeredAt.replace('T', ' ') : '-' }}
-                    </div>
-                    <div class="col ref mono">{{ r.paymentReference || '-' }}</div>
-                  </div>
-
-                  <div v-if="(attendeesBySession[s.id] || []).length === 0" class="empty-note">
-                    ยังไม่มีผู้เข้าร่วม
-                  </div>
                 </div>
               </div>
             </transition>
@@ -368,51 +319,6 @@ async function toggleZones(s) {
   }
 }
 
-/* ===== Inline Attendees table (per session) ===== */
-const expandedAttendeesId = ref(null);
-const attendeesBySession = reactive({});     // { [sessionId]: Attendee[] }
-const attLoadingId = ref(null);
-const attError = ref("");
-
-function statusClass(s) {
-  const v = (s || "").toUpperCase();
-  if (["PAID", "CONFIRMED", "SUCCESS"].includes(v)) return "ok";
-  if (["PENDING", "HOLD"].includes(v)) return "warn";
-  return "bad";
-}
-function payClass(s) {
-  const v = (s || "").toUpperCase();
-  if (v === "PAID") return "ok";
-  if (v === "UNPAID") return "bad";
-  return "warn";
-}
-
-async function toggleAttendees(s) {
-  attError.value = "";
-
-  // toggle ปิด/เปิด
-  if (expandedAttendeesId.value === s.id) {
-    expandedAttendeesId.value = null;
-    return;
-  }
-  expandedAttendeesId.value = s.id;
-
-  // โหลดเฉพาะครั้งแรกของ session นั้น
-  if (!attendeesBySession[s.id]) {
-    attLoadingId.value = s.id;
-    try {
-      const { data } = await api.get(`registrations/event/${event.id}/${s.id}`);
-      attendeesBySession[s.id] = Array.isArray(data) ? data : [];
-    } catch (e) {
-      attError.value = e?.response?.data?.message || e.message || "โหลดรายชื่อไม่สำเร็จ";
-      attendeesBySession[s.id] = [];
-    } finally {
-      attLoadingId.value = null;
-    }
-  }
-}
-
-
 const isPlainText = computed(() => {
   const s = (event.descriptionHtml || "").trim(); if (!s) return true; return !/<[a-z][\s\S]*>/i.test(s);
 });
@@ -544,7 +450,6 @@ onMounted(async () => {
 }
 
 /* Ticket Status pill */
-/* Ticket Status pill (modern minimal) */
 .info-item.status .status-wrap {
   display: flex;
   flex-direction: column;
@@ -648,35 +553,38 @@ onMounted(async () => {
 
 
 /* Buttons */
-.btn.attendee {
-  cursor: pointer;
-  background: #1d4ed8;
-  color: #fff;
-  font-weight: 800;
+.btn.attendee,
+.time-btn {
+  display: inline-flex;       
+  align-items: center;         
+  gap: 8px;
+  padding: 10px 18px;
+  height: 42px;               
+  line-height: 1;
   border: none;
   border-radius: 999px;
-  padding: 10px 18px;
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+/* เฉพาะสี */
+.btn.attendee {
+  background: #1d4ed8;
+  color: #fff;
   box-shadow: 0 8px 18px rgba(29, 78, 216, .35);
 }
 
-.btn.attendee .icon-user {
+.time-btn {
+  background: linear-gradient(90deg, #ff3d00, #ff6a13);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
+  font-size: 16px;
+}
+
+.icon-user {
   width: 18px;
   height: 18px;
   fill: #fff;
-}
-
-.time-pill {
-  background: linear-gradient(90deg, #ff3d00, #ff6a13);
-  color: #fff;
-  font-weight: 900;
-  border: none;
-  border-radius: 999px;
-  padding: 10px 18px;
-  cursor: pointer;
-  box-shadow: 0 6px 14px rgba(255, 106, 19, .25);
 }
 
 /* ===== ตารางรอบ ===== */
@@ -729,26 +637,17 @@ onMounted(async () => {
 
 /* Buttons */
 .btn.attendee {
-  cursor: pointer;
   background: #1d4ed8;
   color: #fff;
-  font-weight: 800;
+  font-weight: 900;
   border: none;
   border-radius: 999px;
   padding: 10px 18px;
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
+  cursor: pointer;
   box-shadow: 0 8px 18px rgba(29, 78, 216, .35);
 }
 
-.btn.attendee .icon-user {
-  width: 18px;
-  height: 18px;
-  fill: #fff;
-}
-
-.time-pill {
+.time-btn {
   background: linear-gradient(90deg, #ff3d00, #ff6a13);
   color: #fff;
   font-weight: 900;
@@ -823,57 +722,6 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-/* Attendees table */
-.table.attendees-table {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-}
-
-.t-head {
-  display: grid;
-  grid-template-columns: 56px 1.1fr 1.4fr .9fr 1fr .6fr .9fr .9fr 1.2fr 1fr;
-  background: #f3f4f6;
-  font-weight: 700;
-  font-size: 13px;
-  color: #111;
-  padding: 10px 12px;
-}
-
-.t-row {
-  display: grid;
-  grid-template-columns: 56px 1.1fr 1.4fr .9fr 1fr .6fr .9fr .9fr 1.2fr 1fr;
-  padding: 12px;
-  border-top: 1px solid #f1f5f9;
-  align-items: center;
-}
-
-.col.no {
-  text-align: center;
-  color: #475569;
-}
-
-.status-chip {
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  background: #fff;
-  border: 1.5px solid currentColor;
-}
-
-.status-chip.ok {
-  color: #16a34a;
-}
-
-.status-chip.warn {
-  color: #f59e0b;
-}
-
-.status-chip.bad {
-  color: #ef4444;
-}
 
 /* Animations */
 .collapse-enter-from,
@@ -916,86 +764,6 @@ onMounted(async () => {
   white-space: pre-line;
 }
 
-/* ===== Attendees table (modal) ===== */
-.att-table {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-}
-
-/* ทำหัว/แถวให้เป็นกริดคอลัมน์ */
-.att-head,
-.att-row {
-  display: grid;
-  grid-template-columns: 56px 1.1fr 1.4fr .9fr 1.1fr .6fr .9fr .9fr 1.2fr 1fr;
-  align-items: center;
-  column-gap: 12px;
-}
-
-.att-head {
-  background: #f3f4f6;
-  padding: 10px 12px;
-  font-weight: 700;
-  font-size: 13px;
-  color: #111;
-}
-
-.att-row {
-  padding: 10px 12px;
-  border-top: 1px solid #f1f5f9;
-}
-
-/* คอลัมน์พื้นฐาน */
-.att-row .col,
-.att-head .col {
-  min-width: 0;
-  /* ให้ text truncate ได้ */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.att-row .no,
-.att-head .no {
-  text-align: center;
-  color: #64748b;
-  width: 56px;
-}
-
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-}
-
-/* ป้ายสถานะ */
-.status-chip {
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  background: #fff;
-  border: 1.5px solid currentColor;
-}
-
-.status-chip.ok {
-  color: #16a34a;
-}
-
-.status-chip.warn {
-  color: #f59e0b;
-}
-
-.status-chip.bad {
-  color: #ef4444;
-}
-
-.modal-body .att-table {
-  max-height: 54vh;
-  overflow: auto;
-}
-
-
 /* Responsive */
 @media (max-width:1024px) {
   .hero {
@@ -1015,5 +783,9 @@ onMounted(async () => {
     grid-template-columns: 42px 1fr 1.2fr .9fr 1fr .6fr .9fr .9fr 1.1fr .8fr;
     column-gap: 8px;
   }
+}
+
+.btn.attendee {
+  text-decoration: none;
 }
 </style>

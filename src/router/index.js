@@ -60,6 +60,7 @@ const routes = [
       { path: 'events/:id/detail', name: 'admin-events-detail', component: () => import('@/pages/admin/EventDetail.vue') },
       { path: 'check-in', name: 'admin-events-checkin', component: () => import('@/pages/admin/Check-in.vue') },
       { path: 'zones', name: 'admin-events-zones', component: () => import('@/pages/admin/Zones.vue') },
+      { path: 'regis-zone/:id', name: 'admin-events-regis-zone', component: () => import('@/pages/admin/RegisZone.vue') },
     ],
   },
 

@@ -6,7 +6,7 @@
 
       <!-- Header -->
       <header class="center-header">
-        <h2 class="center-title">All Events</h2>
+        <h2>All Events</h2>
 
         <RouterLink to="/admin/create">
           <button class="btn-add">+ Create Event</button>
