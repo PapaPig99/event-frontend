@@ -53,7 +53,7 @@
           <div class="form-row">
             <label>Group</label>
 
-            <input v-model="form.groupName" type="text" placeholder="optional" />
+            <input v-model="form.groupName" type="text" />
           </div>
 
           <div class="form-row">
