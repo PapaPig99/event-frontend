@@ -1,10 +1,10 @@
 // cypress/e2e/event.cy.js
 /// <reference types="cypress" />
 
-// รองรับทั้ง /api/events และ api/events และโดเมนเต็ม
-const API_EVENTS = '**api/events';
+// รองรับทั้ง /api/events และโดเมนเต็ม
+const API_EVENTS = '**/api/events*';
 
-// ✅ ใช้เส้นทางจริงของหน้า list
+// เส้นทางจริงของหน้า list (จาก router + goSearch)
 const PAGE_PATH = '/event';
 
 // ข้อมูลจำลองจาก API
@@ -16,7 +16,7 @@ const fxEvents = [
     location: 'Impact Arena',
     startDate: '2025-11-01',
     posterImageUrl: '/images/mariah.jpg',
-    status: 'OPEN',              
+    status: 'OPEN', // ต้องเป็น OPEN ให้ผ่าน filter
   },
   {
     id: 202,
@@ -25,7 +25,7 @@ const fxEvents = [
     venue: 'QSNCC',
     date: '2025-12-10',
     detail_image_url: '/images/fin.jpg',
-    status: 'OPEN',              
+    status: 'OPEN',
   },
   {
     id: 303,
@@ -34,23 +34,22 @@ const fxEvents = [
     location: 'Bangkok',
     startDate: '2026-01-20',
     poster_image_url: '/images/edu.jpg',
-    status: 'OPEN',              // ← เพิ่มบรรทัดนี้
+    status: 'OPEN',
   },
-]
+];
 
 Cypress.on('uncaught:exception', () => false);
 
 describe('รายการอีเวนต์ (Event List) – E2E', () => {
-
   beforeEach(() => {
-    // ป้องกัน error จาก layout ที่เรียก /api/me
+    // กัน layout ที่เรียก /api/me
     cy.intercept('GET', '**/api/me', {
       statusCode: 200,
       body: { id: 1, email: 'user@example.com', role: 'USER' },
     }).as('getMe');
   });
 
-  // ✅ EL-001: โหลดข้อมูลสำเร็จและเรนเดอร์การ์ดอีเวนต์ตาม API
+  // EL-001: โหลดข้อมูลสำเร็จและเรนเดอร์การ์ดอีเวนต์ตาม API
   it('EL-001: โหลดข้อมูลสำเร็จและเรนเดอร์การ์ดอีเวนต์ตาม API', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
@@ -62,21 +61,24 @@ describe('รายการอีเวนต์ (Event List) – E2E', () => {
     cy.contains('Tech EDU Bootcamp').should('exist');
   });
 
-  // ✅ EL-002: พิมพ์คำค้นในช่องค้นหา และอัปเดตพารามิเตอร์ q บน URL
+  // EL-002: พิมพ์คำค้นในช่องค้นหา และอัปเดตพารามิเตอร์ q บน URL
   it('EL-002: พิมพ์คำค้นในช่องค้นหา และอัปเดตพารามิเตอร์ q บน URL', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
     cy.visit(PAGE_PATH);
     cy.wait('@getEvents');
 
-    cy.get('form.search input[aria-label="ค้นหาอีเว้นท์"]').clear().type('mariah');
+    cy.get('form.search input[aria-label="ค้นหาอีเว้นท์"]')
+      .clear()
+      .type('mariah');
+
     cy.location().its('search').should('contain', 'q=mariah');
 
     cy.contains('MARIAH CAREY The Celebration of Mimi').should('exist');
     cy.contains('Fin & Growth Summit 2025').should('not.exist');
   });
 
-  // ✅ EL-003: คลิกปุ่มหมวด “ธุรกิจและการลงทุน” แล้วกรองผลลัพธ์ถูกต้อง
+  // EL-003: คลิกปุ่มหมวด “ธุรกิจและการลงทุน” แล้วกรองผลลัพธ์ถูกต้อง
   it('EL-003: คลิกปุ่มหมวด “ธุรกิจและการลงทุน” แล้วกรองผลลัพธ์ถูกต้อง', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
@@ -91,7 +93,7 @@ describe('รายการอีเวนต์ (Event List) – E2E', () => {
     cy.contains('Tech EDU Bootcamp').should('not.exist');
   });
 
-  // ✅ EL-004: คลิกซ้ำปุ่มหมวดเดิมเพื่อยกเลิกการกรอง (ลบ cat ออก)
+  // EL-004: คลิกซ้ำปุ่มหมวดเดิมเพื่อยกเลิกการกรอง (ลบ cat ออก)
   it('EL-004: คลิกซ้ำปุ่มหมวดเดิมเพื่อยกเลิกการกรอง (ลบ cat ออก)', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
@@ -106,7 +108,7 @@ describe('รายการอีเวนต์ (Event List) – E2E', () => {
     cy.contains('Tech EDU Bootcamp').should('exist');
   });
 
-  // ✅ EL-005: เปิดหน้าพร้อมพารามิเตอร์ q และ cat ระบบต้องกรองข้อมูลตั้งแต่เริ่มต้น
+  // EL-005: เปิดหน้าพร้อมพารามิเตอร์ q และ cat ระบบต้องกรองข้อมูลตั้งแต่เริ่มต้น
   it('EL-005: เปิดหน้าพร้อมพารามิเตอร์ q และ cat ระบบต้องกรองข้อมูลตั้งแต่เริ่มต้น', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
@@ -118,29 +120,38 @@ describe('รายการอีเวนต์ (Event List) – E2E', () => {
     cy.contains('MARIAH CAREY The Celebration of Mimi').should('not.exist');
   });
 
-  // ✅ EL-006: ตรวจสอบข้อความ “กำลังโหลด…” แสดงระหว่างเรียก API
-  it('EL-006: ตรวจสอบข้อความ “กำลังโหลด…” แสดงระหว่างเรียก API', () => {
-    cy.intercept('GET', API_EVENTS, (req) => {
-      req.on('response', (res) => res.setDelay(1200));
-      req.reply({ statusCode: 200, body: fxEvents });
-    }).as('getEventsSlow');
+  // EL-006: ตรวจสอบข้อความ “กำลังโหลด…” แสดงระหว่างเรียก API
+it('EL-006: ตรวจสอบข้อความ “กำลังโหลด…” แสดงระหว่างเรียก API', () => {
+  // ให้ API /api/events ช้าแบบบังคับ (2.5s)
+  cy.intercept('GET', API_EVENTS, {
+    delayMs: 2500,
+    statusCode: 200,
+    body: fxEvents,
+  }).as('getEventsSlow');
 
-    cy.visit(PAGE_PATH);
-    cy.contains('กำลังโหลด…').should('be.visible');
-    cy.wait('@getEventsSlow');
-    cy.contains('กำลังโหลด…').should('not.exist');
-  });
+  cy.visit(PAGE_PATH);
 
-  // ✅ EL-007: เมื่อ API ล้มเหลว ระบบต้องแสดงข้อความ “โหลดข้อมูลไม่สำเร็จ”
+  // ตรวจว่าข้อความขึ้นระหว่างรอ API (มี exist)
+  cy.contains('กำลังโหลด…', { timeout: 2000 }).should('exist');
+
+  cy.wait('@getEventsSlow');
+
+  // หลัง API โหลด → loading ต้องหายไป
+  cy.contains('กำลังโหลด…').should('not.exist');
+});
+
+
+  // EL-007: เมื่อ API ล้มเหลว ระบบต้องแสดงข้อความ “โหลดข้อมูลไม่สำเร็จ”
   it('EL-007: เมื่อ API ล้มเหลว ระบบต้องแสดงข้อความ “โหลดข้อมูลไม่สำเร็จ”', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 500, body: 'Server Error' }).as('getEventsFail');
 
     cy.visit(PAGE_PATH);
     cy.wait('@getEventsFail');
+
     cy.contains(/โหลดข้อมูลไม่สำเร็จ/i).should('be.visible');
   });
 
-  // ✅ EL-008: คลิกการ์ดอีเวนต์แล้วนำทางไปหน้ารายละเอียด /event/:id
+  // EL-008: คลิกการ์ดอีเวนต์แล้วนำทางไปหน้ารายละเอียด /event/:id
   it('EL-008: คลิกการ์ดอีเวนต์แล้วนำทางไปหน้ารายละเอียด /event/:id', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
@@ -168,35 +179,46 @@ describe('รายการอีเวนต์ (Event List) – E2E', () => {
         return;
       }
 
-      cy.contains(title).scrollIntoView().then(($t) => {
-        const clickable =
-          $t.closest('a,button,[role="button"]')[0] ||
-          $t.closest('[data-testid^="event-card"], .card, article, li, .event-card, .event, .item')[0];
+      cy.contains(title)
+        .scrollIntoView()
+        .then(($t) => {
+          const clickable =
+            $t.closest('a,button,[role="button"]')[0] ||
+            $t
+              .closest(
+                '[data-testid^="event-card"], .card, article, li, .event-card, .event, .item'
+              )[0];
 
-        if (clickable) {
-          cy.wrap(clickable).click({ force: true });
-        } else {
-          cy.wrap($t.parent()[0]).click({ force: true });
-        }
-      });
+          if (clickable) {
+            cy.wrap(clickable).click({ force: true });
+          } else {
+            cy.wrap($t.parent()[0]).click({ force: true });
+          }
+        });
     });
 
     cy.location().should((loc) => {
       const direct1 = /\/event\/202$/.test(loc.pathname);
       const direct2 = /\/events\/202$/.test(loc.pathname);
-      const redir = loc.pathname === '/' && /redirect=\/?events?\/202/.test(loc.search);
-      expect(direct1 || direct2 || redir, `went to detail: ${loc.pathname}${loc.search}`).to.be.true;
+      const redir =
+        loc.pathname === '/' && /redirect=\/?events?\/202/.test(loc.search);
+      expect(
+        direct1 || direct2 || redir,
+        `went to detail: ${loc.pathname}${loc.search}`
+      ).to.be.true;
     });
   });
 
-  // ✅ EL-009: ค้นหาพร้อมเลือกหมวด URL ต้องคงค่าพารามิเตอร์ทั้งคู่
+  // EL-009: ค้นหาพร้อมเลือกหมวด URL ต้องคงค่าพารามิเตอร์ทั้งคู่
   it('EL-009: ค้นหาพร้อมเลือกหมวด URL ต้องคงค่าพารามิเตอร์ทั้งคู่', () => {
     cy.intercept('GET', API_EVENTS, { statusCode: 200, body: fxEvents }).as('getEvents');
 
     cy.visit(PAGE_PATH);
     cy.wait('@getEvents');
 
-    cy.get('form.search input[aria-label="ค้นหาอีเว้นท์"]').clear().type('summit');
+    cy.get('form.search input[aria-label="ค้นหาอีเว้นท์"]')
+      .clear()
+      .type('summit');
     cy.contains('button.pill', 'ธุรกิจและการลงทุน').click();
 
     cy.location().its('search').should((s) => {

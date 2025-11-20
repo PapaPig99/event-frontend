@@ -17,55 +17,39 @@
       <div class="filters">
 
         <!-- Search -->
-        <input
-          v-model="qTitle"
-          type="text"
-          placeholder="Search event..."
-          class="input"
-        />
+        <input v-model="qTitle" type="text" placeholder="Search event..." class="input" />
 
         <!-- Category Chips -->
         <div class="chips">
-          <div
-            v-for="c in categoryOptions"
-            :key="c.key"
-            :class="['chip', { active: selectedCats.includes(c.key) }]"
-            @click="toggleCategory(c.key)"
-          >
+          <div v-for="c in categoryOptions" :key="c.key" :class="['chip', { active: selectedCats.includes(c.key) }]"
+            @click="toggleCategory(c.key)">
             {{ c.label }}
           </div>
         </div>
 
         <!-- Clear -->
-        <button
-          v-if="selectedCats.length || qTitle"
-          class="clear-btn"
-          @click="clearAll"
-        >
+        <button v-if="selectedCats.length || qTitle" class="clear-btn" @click="clearAll">
           Clear filters
         </button>
       </div>
 
       <!-- Event List -->
       <div class="list-box">
-        <div
-          v-for="ev in filteredEvents"
-          :key="ev.id"
-          :class="['event-item', { active: ev.id === selectedEvent?.id }]"
-          @click="selectEvent(ev)"
-        >
-          <img
-            :src="ev.posterImageUrl || '/no-image.png'"
-            alt="event cover"
-            class="ev-image"
-          />
+        <div v-for="ev in filteredEvents" :key="ev.id" :class="['event-item', { active: ev.id === selectedEvent?.id }]"
+          @click="selectEvent(ev)">
+          <img :src="ev.posterImageUrl || '/no-image.png'" alt="event cover" class="ev-image" />
 
           <div class="ev-info">
             <div class="ev-title">{{ ev.title }}</div>
             <div class="ev-meta">
-              {{ ev.category }} • {{ ev.startDate }} → {{ ev.endDate }}
+              {{ ev.category }} •
+              <span :class="['status-pill', ev.status === 'OPEN' ? 'open' : 'closed']">
+                {{ ev.status }}
+              </span>
             </div>
+
           </div>
+
         </div>
 
         <div v-if="filteredEvents.length === 0" class="empty-text">
@@ -82,8 +66,9 @@
         <span>Category:</span> {{ selectedEvent.category }}
       </div>
       <div class="detail-row">
-        <span>Date:</span> {{ selectedEvent.startDate }} → {{ selectedEvent.endDate }}
+        <span>Status:</span> {{ selectedEvent.status }}
       </div>
+
       <div class="detail-row">
         <span>Location:</span> {{ selectedEvent.location }}
       </div>
@@ -139,12 +124,13 @@ const qTitle = ref("");
 const selectedCats = ref([]);
 
 const categoryOptions = [
-  { key: "concert", label: "คอนเสิร์ต" },
-  { key: "show", label: "การแสดง" },
-  { key: "education", label: "การศึกษา" },
-  { key: "business", label: "ธุรกิจ" },
-  { key: "sport", label: "กีฬา" },
+  { key: "concert", label: "Concert" },
+  { key: "show", label: "Show" },
+  { key: "education", label: "Education" },
+  { key: "business", label: "Business" },
+  { key: "sport", label: "Sport" },
 ];
+
 
 function toggleCategory(c) {
   if (selectedCats.value.includes(c)) {
@@ -201,7 +187,10 @@ const filteredEvents = computed(() => {
   color: #333;
   cursor: pointer;
 }
-.btn-add:hover { background: #f2f2f2; }
+
+.btn-add:hover {
+  background: #f2f2f2;
+}
 
 /* Filters */
 .filters {
@@ -252,7 +241,7 @@ const filteredEvents = computed(() => {
   background: #dcdcdc;
   border-color: #bfbfbf;
   font-weight: 500;
-  
+
 }
 
 /* Clear button */
@@ -269,7 +258,9 @@ const filteredEvents = computed(() => {
 
 
 /* Event list */
-.list-box { margin-top: 20px; }
+.list-box {
+  margin-top: 20px;
+}
 
 .event-item {
   display: flex;
@@ -282,10 +273,12 @@ const filteredEvents = computed(() => {
   border-radius: 6px;
   cursor: pointer;
 }
+
 .event-item.active {
   border: 1px solid #cccccc;
   background: #f0f0f0;
 }
+
 .ev-image {
   width: 64px;
   height: 64px;
@@ -293,7 +286,9 @@ const filteredEvents = computed(() => {
   border-radius: 6px;
 }
 
-.event-item:hover { background: #f7f7f7; }
+.event-item:hover {
+  background: #f7f7f7;
+}
 
 /* Detail panel (right) */
 .right-panel {
@@ -312,12 +307,13 @@ const filteredEvents = computed(() => {
   color: #333;
   transition: 0.15s;
 }
+
 .btn-danger {
   background: #FF3336;
   color: #fff;
   padding: 6px 14px;
   border: none;
-  border-radius: 6px ;
+  border-radius: 6px;
   cursor: pointer;
 }
 
@@ -330,5 +326,15 @@ const filteredEvents = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.status-pill.open {
+  color: #16A34A;
+  font-weight: 500; 
+}
+
+.status-pill.closed {
+  color: #DC2626;
+  font-weight: 500; 
+
 }
 </style>
