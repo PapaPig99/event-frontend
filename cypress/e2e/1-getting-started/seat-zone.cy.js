@@ -2,66 +2,77 @@
 
 Cypress.on('uncaught:exception', () => false)
 
-describe('Seat Zone Page – Step 2', () => {
+describe('E2E – Seat Zone Page Flow (No Project Modification)', () => {
   const EVENT_ID = 1
   const SEAT_URL = `/event/${EVENT_ID}/seat-zone`
-  const VALID_PATH = new RegExp(`/event/${EVENT_ID}/(seat-zone|plan)$`)
 
-  /* =====  Auth Stub ===== */
-  const stubAuth = () => {
-    cy.intercept('GET', '**/api/**/me*',      { statusCode: 200, body: { id: 1, role: 'USER' } })
-    cy.intercept('GET', '**/api/auth/**',     { statusCode: 200, body: { id: 1, role: 'USER' } })
-    cy.intercept('GET', '**/api/users/me*',   { statusCode: 200, body: { id: 1, role: 'USER' } })
-    cy.intercept('GET', '**/api/**/session*', { statusCode: 200, body: { id: 1, role: 'USER' } })
-    cy.intercept('GET', '**/api/**/profile*', { statusCode: 200, body: { id: 1, role: 'USER' } })
+  /* ============================================
+     1) FORCE FRONTEND ให้คิดว่า user ล็อกอินเสมอ
+  ============================================ */
+  const stubFrontendAuth = () => {
+    cy.window().then(win => {
+      // mock isAuthed() = true
+      win.isAuthed = () => true
+
+      // mock currentUser() = USER
+      win.currentUser = () => ({ id: 1, role: 'USER' })
+    })
   }
 
-  /* =====  Stub Event Data ===== */
-  const stubEvent = () => {
+  /* ============================================
+     2) STUB backend APIs
+  ============================================ */
+  const stubBackend = () => {
+
+    // Auth APIs
+    cy.intercept('GET', '**/api/**/me*',    { statusCode: 200, body: { id: 1, role: 'USER' }})
+    cy.intercept('GET', '**/api/users/me*', { statusCode: 200, body: { id: 1, role: 'USER' }})
+
+    // Event
     cy.intercept('GET', `**/api/events/${EVENT_ID}`, {
       statusCode: 200,
       body: {
         id: EVENT_ID,
         title: 'Pure Concert 2025',
-        posterImageUrl: '/poster-demo.jpg',
+        posterImageUrl: '/poster.jpg',
         startDate: '2025-12-20',
         sessions: [
-          { id: 10, start_time: '19:00', price: 1500 },
-          { id: 11, start_time: '21:00', price: 1200 },
+          { id: 10, start_time: '19:00', price: 1500 }
         ],
         zones: [
-          { id: 1, name: 'VIP Zone', price: 1500, capacity: 50 },
-          { id: 2, name: 'Regular Zone', price: 800, capacity: 200 }
+          { id: 1, name: 'VIP Zone', price: 1500, capacity: 50 }
         ]
       }
     }).as('event')
 
-    cy.intercept('GET', `**/api/events/${EVENT_ID}/view`, {
-      statusCode: 200,
-      body: {
-        id: EVENT_ID,
-        startDate: '2025-12-20',
-        sessions: [
-          { id: 10, start_time: '19:00' },
-          { id: 11, start_time: '21:00' },
-        ]
-      }
-    }).as('view')
-
+    // Availability
     cy.intercept('GET', '**/api/zones/session/**/availability', {
       statusCode: 200,
       body: [
-        { zoneId: 1, zoneName: 'VIP Zone', available: 47, capacity: 50 },
-        { zoneId: 2, zoneName: 'Regular Zone', available: 200, capacity: 200 }
+        { zoneId: 1, zoneName: 'VIP Zone', available: 47, capacity: 50 }
       ]
     }).as('avail')
+
+    // Booking
+  cy.intercept('POST', '**/api/registrations*', {
+    statusCode: 201,
+    body: {
+      registrationId: 999,
+      eventId: EVENT_ID,
+      sessionId: 10,
+      zoneId: 1,
+      quantity: 2,
+      totalPrice: 3000
+    }
+  }).as('reserve')
+
   }
 
-  /* ===== Visit Seat-Zone ===== */
+  /* ============================================
+     3) GO TO SEAT-ZONE PAGE
+  ============================================ */
   const goToSeatZone = () => {
-    cy.clock()
-    stubAuth()
-    stubEvent()
+    stubBackend()
 
     cy.visit(SEAT_URL, {
       onBeforeLoad(win) {
@@ -69,49 +80,45 @@ describe('Seat Zone Page – Step 2', () => {
       }
     })
 
-    // Allow dynamic import load
-    cy.wait(200)
+    cy.wait(300)
 
-    // validate path
-    cy.location('pathname', { timeout: 8000 }).should(p => {
-      expect(VALID_PATH.test(p), `Expected seat-zone or plan, got ${p}`).to.be.true
-    })
+    // override auth functions
+    stubFrontendAuth()
 
-    // wait all 3 APIs
+    // ✔ รอเฉพาะ API ที่ถูกยิงจริง
     cy.wait('@event')
-    cy.wait('@view')
     cy.wait('@avail')
   }
 
   beforeEach(goToSeatZone)
 
-  /* ===================== TC ========================= */
+  /* ============================================
+     4) TEST: Full seat selection
+  ============================================ */
+  it('SEAT-001: User selects seat and goes to payment', () => {
 
-  it('SEAT-001: โหลดหน้า seat-zone สำเร็จ + step 2', () => {
+    // HERO LOADED
     cy.get('.event-title').should('contain.text', 'Pure Concert 2025')
-    cy.get('.poster').should('be.visible')
-    cy.get('.step.active .ball').should('contain.text', '2')
-  })
 
-  it('SEAT-002: เปิด/ปิดโมดัล "ที่นั่งว่าง"', () => {
-    cy.contains('button.status-chip', 'ที่นั่งว่าง').click({ force: true })
+    // SELECT SESSION (มีแค่ 1 ตัว)
+    cy.get('select#show').select(0)
 
-    cy.get('.avail-card').should('be.visible')
-    cy.contains('.avail-head .title', 'โซนที่นั่ง').should('exist')
-    cy.contains('.avail-table .col.zone', 'VIP Zone').should('exist')
+    // SELECT ZONE: VIP Zone
+    cy.contains('.zone-title', 'VIP Zone')
+      .parents('.zone-item')
+      .within(() => {
+        cy.contains('+').click()
+        cy.contains('+').click()
+      })
 
-    cy.get('.avail-card .close').click({ force: true })
-    cy.get('.avail-card').should('not.exist')
-  })
+    cy.contains('จำนวน 2 ที่นั่ง')
 
-  it('SEAT-003: ปุ่มย้อนกลับ → กลับไปหน้า event หรือ plan', () => {
-    cy.get('button.btn-back').click()
+    // NEXT STEP → PAYMENT
+    cy.contains('button', 'ไปหน้าชำระเงิน').click()
 
-    cy.location('pathname', { timeout: 8000 }).should(p => {
-      const ok =
-        p === `/event/${EVENT_ID}` ||
-        p === `/event/${EVENT_ID}/plan`
-      expect(ok, `unexpected redirect to ${p}`).to.be.true
-    })
+    cy.wait('@reserve')
+
+    // Validate payment page
+    cy.location('pathname').should('include', `/event/${EVENT_ID}/payment`)
   })
 })

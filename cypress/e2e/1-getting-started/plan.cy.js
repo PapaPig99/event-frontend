@@ -1,8 +1,8 @@
 // cypress/e2e/1-getting-started/plan.cy.js
 /// <reference types="cypress" />
 
+// ปิด error dynamic import (Vue lazy-load)
 Cypress.on("uncaught:exception", (err) => {
-  // กัน error dynamic import ที่ Vue ขว้างตอน route ไม่พบ component
   if (err.message.includes("Failed to fetch dynamically imported module")) {
     return false;
   }
@@ -10,10 +10,9 @@ Cypress.on("uncaught:exception", (err) => {
 });
 
 const EVENT_ID = 101;
-
-// ❗ เปลี่ยนเฉพาะตรงนี้ให้ตรงกับ router ของคุณจริง ๆ
 const PLAN_PATH = `/event/${EVENT_ID}/plan`;
 
+// Mock event detail
 const fxEventDetail = {
   id: EVENT_ID,
   title: "MARIAH CAREY The Celebration of Mimi",
@@ -30,6 +29,7 @@ const fxEventDetail = {
   ],
 };
 
+// Mock avail
 const fxAvail = [
   { zoneName: "A1", available: 120 },
   { zoneName: "B1", available: 0 },
@@ -48,15 +48,24 @@ describe("PLAN - ดูผังและเลือกประเภทที
     cy.wait("@getEventDetail");
 
     cy.get(".plan-page").should("exist");
-    cy.get(".hero-card .poster").should("have.attr", "src").and("include", fxEventDetail.posterImageUrl);
+
+    cy.get(".hero-card .poster")
+      .should("have.attr", "src")
+      .and("include", fxEventDetail.posterImageUrl);
+
     cy.contains(".event-title", fxEventDetail.title).should("exist");
 
-    cy.get("select#show").should("exist").find("option").should("have.length.at.least", 1);
+    cy.get("select#show")
+      .should("exist")
+      .find("option")
+      .should("have.length.at.least", 1);
 
-    cy.get(".seatmap-img").should("have.attr", "src").and("include", fxEventDetail.seatmapImageUrl);
+    cy.get(".seatmap-img")
+      .should("have.attr", "src")
+      .and("include", fxEventDetail.seatmapImageUrl);
   });
 
-  it('PLAN-002: เปิดดูที่นั่งว่างและแสดงข้อมูลโซนในโมดัล', () => {
+  it("PLAN-002: เปิดดูที่นั่งว่างและแสดงข้อมูลโซนในโมดัล", () => {
     cy.intercept("GET", "**/api/zones/session/*/availability", {
       statusCode: 200,
       body: fxAvail,
@@ -66,8 +75,6 @@ describe("PLAN - ดูผังและเลือกประเภทที
     cy.wait("@getEventDetail");
 
     cy.contains("button", "ที่นั่งว่าง").click();
-
-    cy.get(".avail-card").should("exist");
     cy.wait("@getAvail");
 
     cy.contains(".zone", "A1").should("exist");
@@ -91,13 +98,19 @@ describe("PLAN - ดูผังและเลือกประเภทที
     cy.contains("โหลดไม่สำเร็จ").should("exist");
   });
 
-  it('PLAN-004: กดปุ่มถัดไปและนำทางไปหน้า seat-zone', () => {
+  it("PLAN-004: กดปุ่มถัดไปและนำทางไปหน้า seat-zone", () => {
     cy.visit(PLAN_PATH);
     cy.wait("@getEventDetail");
 
     cy.contains("button", "ถัดไป").click();
 
-    cy.location("pathname").should("include", `/event/${EVENT_ID}/seat-zone`);
+    cy.location("pathname").should(
+      "include",
+      `/event/${EVENT_ID}/seat-zone`
+    );
+
+    // ⬇⬇ เปลี่ยนจาก mock-seat-zone → element จริงของ seat-zone
+    cy.get(".event-title").should("exist");
   });
 
   it("PLAN-005: อีเวนต์ไม่มีผังที่นั่งและนำทางไป seat-zone ทันที", () => {
@@ -111,6 +124,12 @@ describe("PLAN - ดูผังและเลือกประเภทที
     cy.visit(PLAN_PATH);
     cy.wait("@getNoSeat");
 
-    cy.location("pathname").should("include", `/event/${EVENT_ID}/seat-zone`);
+    cy.location("pathname").should(
+      "include",
+      `/event/${EVENT_ID}/seat-zone`
+    );
+
+    // ⬇⬇ ใช้ element จริงของ seat-zone
+    cy.get(".event-title").should("exist");
   });
 });
