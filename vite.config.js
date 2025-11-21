@@ -4,7 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
-  base: '/papapig99-frontend',
+  base: '/papapig99-frontend/',
    server: {
    proxy: {
     '/api':    { target: 'http://localhost:8081', changeOrigin: true },
