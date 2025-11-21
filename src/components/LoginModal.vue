@@ -64,7 +64,7 @@ function clearForm() {
 
 function close() { emit('update:modelValue', false) }
 async function onSubmit() {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch('https://muict.app/papapig99-backend/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
      body: JSON.stringify({ email: email.value, password: password.value })

@@ -348,7 +348,7 @@ function normalizeEvent(api) {
 }
 onMounted(async () => {
   const id = route.params.id || 1;
-  const res = await fetch(`/api/events/${id}/view`);
+  const res = await fetch(`https://muict.app/papapig99-backend/api/events/${id}/view`);
   if (!res.ok) { console.error("HTTP", res.status); return; }
   Object.assign(event, normalizeEvent(await res.json()));
   selectedShowId.value = sessionsSorted.value?.[0]?.id || "";
