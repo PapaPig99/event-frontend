@@ -258,7 +258,7 @@ onMounted(async () => {
 
     /* STEP 2: โหลด event */
     const id = route.params.id || 1
-    const res = await fetch(`/api/events/${id}`)
+    const res = await fetch(`/papapig99-backend/api/events/${id}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
 eventId.value = data.id
