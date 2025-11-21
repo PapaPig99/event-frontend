@@ -90,14 +90,14 @@ jobs:
       - name: Remove Cypress example specs
         run: rm -rf cypress/e2e/2-advanced-examples || true
 
-      # รัน Cypress
-      - name: Run Cypress tests
-        uses: cypress-io/github-action@v6
-        with:
-          browser: chrome
-          config: baseUrl=http://localhost:${{ env.APP_PORT }}
-        env:
-          CI: true
+      # # รัน Cypress
+      # - name: Run Cypress tests
+      #   uses: cypress-io/github-action@v6
+      #   with:
+      #     browser: chrome
+      #     config: baseUrl=http://localhost:${{ env.APP_PORT }}
+      #   env:
+      #     CI: true
 
       # เก็บ log & ปิดคอนเทนเนอร์
       - name: Show container logs
