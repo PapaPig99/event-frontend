@@ -63,32 +63,32 @@ jobs:
             exit 1
           fi
 
-      # รอให้เว็บพร้อม แล้วค่อยวิ่ง E2E
-      - name: Wait for app to be ready
-        shell: bash
-        run: |
-          set -euo pipefail
-          for i in {1..40}; do
-            status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
-            if [ "$status" != "running" ]; then
-              echo "Container status during wait: $status"
-              docker logs app-under-test || true
-              exit 1
-            fi
-            if curl -fsS "http://papapig99-backend-service:8080" >/dev/null; then
-              echo "App is up on :${APP_PORT}"
-              exit 0
-            fi
-            echo "Waiting for app... ($i/40)"
-            sleep 2
-          done
-          echo "App did not start in time"
-          docker logs app-under-test || true
-          exit 2
+      # # รอให้เว็บพร้อม แล้วค่อยวิ่ง E2E
+      # - name: Wait for app to be ready
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+      #     for i in {1..40}; do
+      #       status=$(docker inspect -f '{{.State.Status}}' app-under-test || echo "missing")
+      #       if [ "$status" != "running" ]; then
+      #         echo "Container status during wait: $status"
+      #         docker logs app-under-test || true
+      #         exit 1
+      #       fi
+      #       if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
+      #         echo "App is up on :${APP_PORT}"
+      #         exit 0
+      #       fi
+      #       echo "Waiting for app... ($i/40)"
+      #       sleep 2
+      #     done
+      #     echo "App did not start in time"
+      #     docker logs app-under-test || true
+      #     exit 2
           
-      # ก่อน step "Run Cypress tests"
-      - name: Remove Cypress example specs
-        run: rm -rf cypress/e2e/2-advanced-examples || true
+      # # ก่อน step "Run Cypress tests"
+      # - name: Remove Cypress example specs
+      #   run: rm -rf cypress/e2e/2-advanced-examples || true
 
       # # รัน Cypress
       # - name: Run Cypress tests
