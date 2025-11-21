@@ -75,7 +75,7 @@ jobs:
               docker logs app-under-test || true
               exit 1
             fi
-            if curl -fsS "http://localhost:${APP_PORT}" >/dev/null; then
+            if curl -fsS "http://papapig99-backend-service:8080" >/dev/null; then
               echo "App is up on :${APP_PORT}"
               exit 0
             fi
