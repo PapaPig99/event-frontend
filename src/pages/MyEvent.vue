@@ -372,7 +372,7 @@ onMounted(async () => {
       return
     }
 
-    const { data: regs } = await api.get('/api/registrations/me', {
+    const { data: regs } = await api.get('/registrations/me', {
       params: { email: emailParam },   // 🔴 เพิ่มอันนี้
       headers
     })

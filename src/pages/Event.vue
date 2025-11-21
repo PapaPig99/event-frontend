@@ -58,7 +58,7 @@ function mapEvent(e: AnyEvent) {
 
 async function loadEvents () {
   try {
-    const res = await fetch('/api/events')
+    const res = await fetch('https://muict.app/papapig99-backend/api/events')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     events.value = data.map(mapEvent)
