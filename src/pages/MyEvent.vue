@@ -221,9 +221,9 @@ function buildImageCandidates(raw) {
   if (raw.startsWith('/')) {
     urls.push(raw)                      // เช่น /images/poster.jpg
   } else {
-    urls.push(`/images/${raw}`)
-    urls.push(`/uploads/${raw}`)
-    urls.push(`/static/uploads/${raw}`)
+    urls.push(`/papapig99-backend/images/${raw}`)
+    urls.push(`/papapig99-backend/uploads/${raw}`)
+    urls.push(`/papapig99-backend/static/uploads/${raw}`)
   }
   return [...new Set(urls)]
 }

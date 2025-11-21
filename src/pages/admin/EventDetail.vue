@@ -306,7 +306,7 @@ async function toggleZones(s) {
   if (!zonesBySession[s.id]) {
     zonesLoadingId.value = s.id;
     try {
-      const res = await fetch(`/api/zones/session/${s.id}/availability`);
+      const res = await fetch(`/papapig99-backend/api/zones/session/${s.id}/availability`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       zonesBySession[s.id] = Array.isArray(data) ? data : [];
