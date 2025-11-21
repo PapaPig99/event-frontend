@@ -7,7 +7,7 @@ import axios from 'axios'
 const route = useRoute()
 const router = useRouter()
 
-const API_ME = '/api/auth/me'            // เปลี่ยนตรงนี้ให้ตรง backend ถ้าจำเป็น
+const API_ME = 'https://muict.app/papapig99-backend/api/auth/me'            // เปลี่ยนตรงนี้ให้ตรง backend ถ้าจำเป็น
 
 
 function pickAuthToken() {

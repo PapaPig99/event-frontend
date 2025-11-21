@@ -391,7 +391,7 @@ onMounted(async () => {
     await Promise.all(
       eventIds.map(async (id) => {
         try {
-          const { data: ev } = await axios.get(`/api/events/${id}`)
+          const { data: ev } = await axios.get(`https://muict.app/papapig99-backend/api/events/${id}`)
           eventMap.set(id, ev)
         } catch (e) {
           console.warn('GET /api/events/' + id + ' failed:', e?.response?.status || e)
