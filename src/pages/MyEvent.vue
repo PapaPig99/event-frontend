@@ -372,7 +372,7 @@ onMounted(async () => {
       return
     }
 
-    const { data: regs } = await api.get('/registrations/me', {
+    const { data: regs } = await api.get('https://muict.app/papapig99-backend/api/registrations/me', {
       params: { email: emailParam },   // 🔴 เพิ่มอันนี้
       headers
     })

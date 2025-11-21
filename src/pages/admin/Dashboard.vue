@@ -144,7 +144,7 @@ const selectedCategory = ref("All");
 
 /* ===== Load KPI (ข้อมูลรวม) ===== */
 async function loadKPI() {
-  const { data } = await api.get("/dashboard/summary");
+  const { data } = await api.get("https://muict.app/papapig99-backend/dashboard/summary");
   activeEvents.value = data.activeEvents;
   ticketsSold.value = data.ticketsSold;
   totalRegistrations.value = data.totalRegistrations;
@@ -152,7 +152,7 @@ async function loadKPI() {
 
 /* ===== Load Summary (ตาม event หรือรวม) ===== */
 async function loadSummary() {
-  const { data } = await api.get("/dashboard/summary", {
+  const { data } = await api.get("https://muict.app/papapig99-backend/dashboard/summary", {
     params: { eventId: selectedEventId.value }
   });
 
@@ -164,7 +164,7 @@ async function loadSummary() {
 
 /* ===== Load Event Table ===== */
 async function loadEvents() {
-  const { data } = await api.get("/dashboard/events");
+  const { data } = await api.get("https://muict.app/papapig99-backend/dashboard/events");
   rows.value = data.map(ev => ({
     eventId: ev.eventId,
     name: ev.title,        

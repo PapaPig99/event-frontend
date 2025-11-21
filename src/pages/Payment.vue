@@ -298,7 +298,7 @@ async function confirmPayment() {
     const paymentReference = String(regIds.value[0])
 
     // 1) confirm payment จริง ๆ
-    const { data: confirmData } = await api.patch('/registrations/confirm', {
+    const { data: confirmData } = await api.patch('https://muict.app/papapig99-backend/api/registrations/confirm', {
       paymentReference,
     })
     sessionStorage.setItem('lastPayment', JSON.stringify(confirmData))
