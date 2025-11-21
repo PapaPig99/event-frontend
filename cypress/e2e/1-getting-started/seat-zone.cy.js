@@ -2,31 +2,33 @@
 
 Cypress.on('uncaught:exception', () => false)
 
-describe('E2E – Seat Zone Page Flow (No Project Modification)', () => {
+describe('E2E – Seat Zone Page Flow (CI Safe Version)', () => {
   const EVENT_ID = 1
   const SEAT_URL = `/event/${EVENT_ID}/seat-zone`
 
   /* ============================================
-     1) FORCE FRONTEND ให้คิดว่า user ล็อกอินเสมอ
+     FORCE FRONTEND AUTH ก่อน FE mount จริง
   ============================================ */
-  const stubFrontendAuth = () => {
-    cy.window().then(win => {
-      // mock isAuthed() = true
-      win.isAuthed = () => true
-
-      // mock currentUser() = USER
-      win.currentUser = () => ({ id: 1, role: 'USER' })
-    })
+  const forceAuthEarly = (win) => {
+    win.localStorage.setItem('token', 'mock.jwt')
+    win.isAuthed = () => true
+    win.currentUser = () => ({ id: 1, role: 'USER' })
   }
 
   /* ============================================
-     2) STUB backend APIs
+     STUB BACKEND APIs
   ============================================ */
   const stubBackend = () => {
 
-    // Auth APIs
-    cy.intercept('GET', '**/api/**/me*',    { statusCode: 200, body: { id: 1, role: 'USER' }})
-    cy.intercept('GET', '**/api/users/me*', { statusCode: 200, body: { id: 1, role: 'USER' }})
+    cy.intercept('GET', '**/api/**/me*', {
+      statusCode: 200,
+      body: { id: 1, role: 'USER' }
+    })
+
+    cy.intercept('GET', '**/api/users/me*', {
+      statusCode: 200,
+      body: { id: 1, role: 'USER' }
+    })
 
     // Event
     cy.intercept('GET', `**/api/events/${EVENT_ID}`, {
@@ -53,39 +55,33 @@ describe('E2E – Seat Zone Page Flow (No Project Modification)', () => {
       ]
     }).as('avail')
 
-    // Booking
-  cy.intercept('POST', '**/api/registrations*', {
-    statusCode: 201,
-    body: {
-      registrationId: 999,
-      eventId: EVENT_ID,
-      sessionId: 10,
-      zoneId: 1,
-      quantity: 2,
-      totalPrice: 3000
-    }
-  }).as('reserve')
-
+    // Reservation (Draft)
+    cy.intercept('POST', '**/api/registrations*', {
+      statusCode: 201,
+      body: {
+        registrationId: 999,
+        eventId: EVENT_ID,
+        sessionId: 10,
+        zoneId: 1,
+        quantity: 2,
+        totalPrice: 3000
+      }
+    }).as('reserve')
   }
 
   /* ============================================
-     3) GO TO SEAT-ZONE PAGE
+     VISIT + STUB
   ============================================ */
   const goToSeatZone = () => {
+
     stubBackend()
 
     cy.visit(SEAT_URL, {
       onBeforeLoad(win) {
-        win.localStorage.setItem('token', 'mock.jwt')
+        forceAuthEarly(win)   // 👈 บังคับ FE ว่า "ล็อกอินแล้ว" ตั้งแต่ก่อน mount
       }
     })
 
-    cy.wait(300)
-
-    // override auth functions
-    stubFrontendAuth()
-
-    // ✔ รอเฉพาะ API ที่ถูกยิงจริง
     cy.wait('@event')
     cy.wait('@avail')
   }
@@ -93,17 +89,17 @@ describe('E2E – Seat Zone Page Flow (No Project Modification)', () => {
   beforeEach(goToSeatZone)
 
   /* ============================================
-     4) TEST: Full seat selection
+     TEST
   ============================================ */
-  it('SEAT-001: User selects seat and goes to payment', () => {
+  it('SEAT-001: ผู้ใช้เลือกที่นั่งและไปหน้าชำระเงิน', () => {
 
     // HERO LOADED
     cy.get('.event-title').should('contain.text', 'Pure Concert 2025')
 
-    // SELECT SESSION (มีแค่ 1 ตัว)
+    // SELECT SESSION
     cy.get('select#show').select(0)
 
-    // SELECT ZONE: VIP Zone
+    // SELECT ZONE
     cy.contains('.zone-title', 'VIP Zone')
       .parents('.zone-item')
       .within(() => {
@@ -113,12 +109,13 @@ describe('E2E – Seat Zone Page Flow (No Project Modification)', () => {
 
     cy.contains('จำนวน 2 ที่นั่ง')
 
-    // NEXT STEP → PAYMENT
+    // CLICK NEXT
     cy.contains('button', 'ไปหน้าชำระเงิน').click()
 
     cy.wait('@reserve')
 
-    // Validate payment page
-    cy.location('pathname').should('include', `/event/${EVENT_ID}/payment`)
+    // ASSERT PAYMENT PAGE
+    cy.location('pathname', { timeout: 8000 })
+      .should('include', `/event/${EVENT_ID}/payment`)
   })
 })
