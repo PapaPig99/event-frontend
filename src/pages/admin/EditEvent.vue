@@ -125,7 +125,7 @@ function resolveImage(filename) {
   if (filename.startsWith("/images/")) return filename
 
   // ถ้าเป็นชื่อไฟล์เปล่า → เติม /images/ ให้
-  return `/papapig99-backend/images/${filename.replace(/^\/+/, "")}`
+  return `/images/${filename.replace(/^\/+/, "")}`
 }
 
 /*------- ลบรูป --------- */
