@@ -2,7 +2,7 @@ import api from './api';
 
 export async function registerUser(payload) {
   // payload: { name, email, password, phone?, organization? }
-  const { data } = await api.post('https://muict.app/papapig99-backend/auth/register', payload);
+  const { data } = await api.post('/auth/register', payload);
   // data: { token, userId, email, name, role }
   localStorage.setItem('token', data.token);
   localStorage.setItem('user', JSON.stringify(data));
@@ -10,7 +10,7 @@ export async function registerUser(payload) {
 }
 
 export async function loginUser(payload) {
-  const { data } = await api.post('https://muict.app/papapig99-backend/auth/login', payload);
+  const { data } = await api.post('/auth/login', payload);
   localStorage.setItem('token', data.token);
   localStorage.setItem('user', JSON.stringify(data));
   return data;

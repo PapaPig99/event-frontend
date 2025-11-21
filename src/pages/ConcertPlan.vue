@@ -128,7 +128,7 @@ onMounted(async () => {
   }
 
   try {
-    const res = await fetch(`https://muict.app/papapig99-backend/api/events/${id}`)
+    const res = await fetch(`/api/events/${id}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const api = await res.json()
 
@@ -240,7 +240,7 @@ async function getCurrentSessionId() {
   if (!sid) {
     try {
       const id = routeId.value
-      const res = await fetch(`https://muict.app/papapig99-backend/api/events/${id}/view`)
+      const res = await fetch(`/api/events/${id}/view`)
       if (res.ok) {
         const api = await res.json()
         const options = (api.sessions || []).map(s => {

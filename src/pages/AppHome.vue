@@ -48,7 +48,7 @@ function mapSummaryToCard(e) {
 
 async function loadEvents() {
   try {
-    const res = await fetch('https://muict.app/papapig99-backend/api/events')   // ผ่าน proxy
+    const res = await fetch('/api/events')   // ผ่าน proxy
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     recommended.value = data.map(mapSummaryToCard)

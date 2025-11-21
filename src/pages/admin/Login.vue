@@ -13,7 +13,7 @@ const togglePassword = () => { showPassword.value = !showPassword.value }
 
 async function handleLogin(){
   try {
-    const res = await fetch('https://muict.app/papapig99-backend/api/auth/login', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ email: username.value, password: password.value })
