@@ -68,7 +68,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory('/papapig99-frontend/'),
   routes,
 })
 
