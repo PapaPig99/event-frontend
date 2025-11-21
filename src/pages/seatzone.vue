@@ -27,31 +27,56 @@ const zonePriceById   = ref({})  // { "1": 12000, ... }
 const zonePriceByName = ref({})  // { "zone a ...": 12000, ... }
 
 async function ensurePriceIndexLoaded(eventId) {
+  // ถ้ามีอยู่แล้วไม่ต้องโหลดซ้ำ
   if (Object.keys(zonePriceById.value).length > 0 || Object.keys(zonePriceByName.value).length > 0) return;
 
-  const byId  = {}
-  const byName= {}
+  const byId   = {}
+  const byName = {}
 
+  // 1) ดึงจาก plan ที่ส่งมาจากหน้า seatmap ถ้ามี
   const plan = readPlan(eventId)
   if (Array.isArray(plan?.zones)) {
     plan.zones.forEach(z => {
       const id  = String(z.id ?? z.zoneId ?? '')
       const key = normalizeKey(z.name || z.label || z.code || id)
-      const p   = Number(z.price ?? 0)
-      if (id)  byId[id]   = p
-      if (key) byName[key]= p
+      const p   = Number(z.price ?? z.unitPrice ?? 0)
+      if (id)  byId[id]    = p
+      if (key) byName[key] = p
     })
   }
 
+  // 2) ดึงจาก /api/events/{id}/view (ที่มี sessions[].zones[].price)
+  try {
+    // ถ้า proxy เป็น /core ให้เปลี่ยนตามนี้:
+    // const { data: view } = await api.get(`/core/events/${eventId}/view`)
+    const { data: view } = await api.get(`/events/${eventId}/view`)
+
+    if (Array.isArray(view?.sessions)) {
+      view.sessions.forEach(sess => {
+        (sess.zones || []).forEach(z => {
+          const id  = String(z.id ?? z.zoneId ?? '')
+          const key = normalizeKey(z.name || z.label || z.code || id)
+          const p   = Number(z.price ?? z.unitPrice ?? 0)
+
+          if (id && !Number.isFinite(byId[id]))      byId[id]    = p
+          if (key && !Number.isFinite(byName[key]))  byName[key] = p
+        })
+      })
+    }
+  } catch (e) {
+    console.warn('ensurePriceIndexLoaded: /events/{id}/view failed', e)
+  }
+
+  // 3) fallback เดิมจาก /events/{id} (ถ้า service เดิมยังใช้อยู่)
   try {
     const { data: ev } = await api.get(`/events/${eventId}`)
     if (Array.isArray(ev?.zones)) {
       ev.zones.forEach(z => {
         const id  = String(z.id ?? '')
         const key = normalizeKey(z.name || z.label || z.id)
-        const p   = Number(z.price ?? 0)
-        if (id)  byId[id]    = p
-        if (key) byName[key] = p
+        const p   = Number(z.price ?? z.unitPrice ?? 0)
+        if (id && !Number.isFinite(byId[id]))      byId[id]    = p
+        if (key && !Number.isFinite(byName[key]))  byName[key] = p
       })
     }
   } catch (_) {}
@@ -59,6 +84,7 @@ async function ensurePriceIndexLoaded(eventId) {
   zonePriceById.value   = byId
   zonePriceByName.value = byName
 }
+
 
 /* ===== UI Helpers (สรุป) ===== */
 const totalQty    = computed(() => zones.value.reduce((s,z)=> s + Number(z.qty||0), 0))
@@ -206,8 +232,11 @@ function ensureZonesFromAvailability() {
       let price = 0
       const byId   = zonePriceById.value[String(zoneId)]
       const byName = zonePriceByName.value[keyName]
-      if (Number.isFinite(byId))      price = byId
-      else if (Number.isFinite(byName)) price = byName
+      const fromAvail = Number(it.price ?? it.unitPrice ?? 0)
+      
+      if (Number.isFinite(byId))           price = byId
+      else if (Number.isFinite(byName))    price = byName
+      else if (Number.isFinite(fromAvail)) price = fromAvail
 
       toPush.push({
         id: zoneId ?? `Z${zones.value.length + toPush.length + 1}`,
@@ -252,6 +281,9 @@ async function loadAvailOnce() {
   latestAvail.value = []
 
   try {
+    const eventId = Number(route.params.id)
+    await ensurePriceIndexLoaded(eventId)
+
     const sid = await getCurrentSessionId()
     if (!sid) throw new Error('ไม่พบรอบการแสดง (sessionId)')
 
