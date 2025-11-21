@@ -10,6 +10,8 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ค่อยก็อปซอร์ส
 COPY . .
+ARG VITE_API_BASE
+ENV VITE_API_BASE=$VITE_API_BASE
 
 # สร้างไฟล์ production build
 RUN --mount=type=cache,target=/root/.npm npm run build
