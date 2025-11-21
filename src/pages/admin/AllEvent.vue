@@ -37,7 +37,7 @@
       <div class="list-box">
         <div v-for="ev in filteredEvents" :key="ev.id" :class="['event-item', { active: ev.id === selectedEvent?.id }]"
           @click="selectEvent(ev)">
-          <img :src="toImageUrl(ev.posterImageUrl) || '/no-image.png'" alt="event cover" class="ev-image" />
+          <img :src="ev.posterImageUrl || '/no-image.png'" alt="event cover" class="ev-image" />
 
           <div class="ev-info">
             <div class="ev-title">{{ ev.title }}</div>
@@ -95,11 +95,6 @@ const router = useRouter();
 
 const events = ref([]);
 const selectedEvent = ref(null);
-
-function toImageUrl(path) {
-  if (!path) return "/no-image.png";
-  return `papapig99-backend${path}`;
-}
 
 onMounted(async () => {
   const res = await api.get("/events");
